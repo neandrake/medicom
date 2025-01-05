@@ -18,6 +18,13 @@
 //!
 //! <https://doc.rust-lang.org/book/ch20-02-multithreaded.html>
 //! <https://doc.rust-lang.org/book/ch20-03-graceful-shutdown-and-cleanup.html>
+
+// The thread pool is currently only used by the SCP Provider app, which is optional. If compiled
+// without that feature this thread pool module becomes unused, but there's no reason to throw up
+// warnings about it, or to only conditionally include this module in case it ends up being useful
+// elsewhere in the future.
+#![allow(dead_code)]
+
 use anyhow::{anyhow, Result};
 
 use std::{

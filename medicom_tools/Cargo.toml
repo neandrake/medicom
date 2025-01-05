@@ -12,9 +12,10 @@ keywords = ["dicom"]
 categories = ["command-line-utilities"]
 
 [features]
-index = ["dep:mongodb", "dep:bson"]
 dhat = ["dep:dhat"]
-default = ["index"]
+image = ["dep:image", "dep:winit"]
+index = ["dep:mongodb", "dep:bson"]
+default = ["index", "image"]
 
 [dependencies]
 anyhow = "1.0"
@@ -22,9 +23,10 @@ bson = { version = "2.13", optional = true }
 clap = { version = "4.5", features = ["derive"] }
 crossterm = "0.28"
 dhat = { version = "0.3", optional = true }
-image = "0.25"
+image = { version = "0.25", optional = true }
 medicom = { path = "../medicom", version = "0.5", features = ["compress", "dimse", "stddicom"] }
 mongodb = { version = "3.1", default-features = false, features = ["dns-resolver", "sync", "rustls-tls", "compat-3-0-0"], optional = true }
 ratatui = "0.29"
 walkdir = "2.5"
+winit = { version = "0.30", optional = true }
 

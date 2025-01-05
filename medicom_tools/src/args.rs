@@ -31,11 +31,12 @@ pub enum Command {
     /// Parses a single file and prints the DICOM elements to stdout.
     Print(PrintArgs),
 
-    /// Encodes Pixel Data into a standard image format.
-    Image(ImageArgs),
-
     /// Browse a DICOM dataset in a text-based user interface.
     Browse(BrowseArgs),
+
+    /// Encodes Pixel Data into a standard image format.
+    #[cfg(feature = "image")]
+    Image(ImageArgs),
 
     /// Manage a database index of DICOM on disk.
     ///
@@ -52,6 +53,7 @@ pub enum Command {
     Archive(ArchiveArgs),
 
     /// Starts an SCP service.
+    #[cfg(feature = "index")]
     Scp(SvcProviderArgs),
 
     /// Issue commands as an SCU.
@@ -64,6 +66,7 @@ pub struct PrintArgs {
     pub file: PathBuf,
 }
 
+#[cfg(feature = "image")]
 #[derive(Args, Debug)]
 pub struct ImageArgs {
     /// The DICOM file to extract image data from.
@@ -79,6 +82,7 @@ pub struct BrowseArgs {
     pub file: PathBuf,
 }
 
+#[cfg(feature = "index")]
 #[derive(Args, Debug)]
 pub struct IndexArgs {
     #[arg(short, long)]
@@ -90,6 +94,7 @@ pub struct IndexArgs {
     pub cmd: IndexCommand,
 }
 
+#[cfg(feature = "index")]
 #[derive(Parser, Debug)]
 pub enum IndexCommand {
     /// Recursively scans a folder for DICOM datasets, indexing them into a database.
@@ -110,6 +115,7 @@ pub struct ArchiveArgs {
     pub destination: PathBuf,
 }
 
+#[cfg(feature = "index")]
 #[derive(Args, Debug)]
 pub struct SvcProviderArgs {
     #[arg(short, long)]

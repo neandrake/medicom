@@ -38,10 +38,12 @@ use medicom::{
 
 pub(crate) mod archiveapp;
 pub(crate) mod browseapp;
+#[cfg(feature = "image")]
 pub(crate) mod imageapp;
 #[cfg(feature = "index")]
 pub(crate) mod indexapp;
 pub(crate) mod printapp;
+#[cfg(feature = "index")]
 pub(crate) mod scpapp;
 pub(crate) mod scuapp;
 

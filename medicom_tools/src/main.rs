@@ -20,11 +20,16 @@ use std::process;
 
 use clap::Parser;
 
+#[cfg(feature = "image")]
+use crate::app::imageapp::ImageApp;
+
 #[cfg(feature = "index")]
+use crate::app::{indexapp::IndexApp, scpapp::SvcProviderApp};
+
 use crate::{
     app::{
-        archiveapp::ArchiveApp, browseapp::BrowseApp, imageapp::ImageApp, indexapp::IndexApp,
-        printapp::PrintApp, scpapp::SvcProviderApp, scuapp::SvcUserApp, CommandApplication,
+        archiveapp::ArchiveApp, browseapp::BrowseApp, printapp::PrintApp, scuapp::SvcUserApp,
+        CommandApplication,
     },
     args::{Arguments, Command},
 };
@@ -33,11 +38,9 @@ mod app;
 mod args;
 mod threadpool;
 
-
 #[cfg(feature = "dhat")]
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
-
 
 fn main() {
     #[cfg(feature = "dhat")]
@@ -55,11 +58,13 @@ fn make_app() -> Box<dyn CommandApplication> {
 
     match args.command {
         Command::Print(args) => Box::new(PrintApp::new(args)),
-        Command::Image(args) => Box::new(ImageApp::new(args)),
         Command::Browse(args) => Box::new(BrowseApp::new(args)),
+        #[cfg(feature = "image")]
+        Command::Image(args) => Box::new(ImageApp::new(args)),
         #[cfg(feature = "index")]
         Command::Index(args) => Box::new(IndexApp::new(args)),
         Command::Archive(args) => Box::new(ArchiveApp::new(args)),
+        #[cfg(feature = "index")] // Running SCP service requires the archive database.
         Command::Scp(args) => Box::new(SvcProviderApp::new(args)),
         Command::Scu(args) => Box::new(SvcUserApp::new(args)),
     }
