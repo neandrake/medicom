@@ -228,8 +228,8 @@ impl PixelDataSliceInfo {
     }
 
     #[must_use]
-    pub fn bytes(&self) -> &[u8] {
-        &self.pd_bytes
+    pub fn take_bytes(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.pd_bytes)
     }
 
     /// Whether the byte values in Pixel Data are signed or unsigned values.
@@ -475,8 +475,16 @@ impl PixelDataSliceInfo {
     /// Process the relevant `PixelData` element/fragments by copying the data/bytes into the
     /// `PixelDataInfo::pd_bytes` field, replacing the element's data/bytes with an empty vec.
     fn process_pixdata_element(pixdata_info: &mut PixelDataSliceInfo, elem: &mut DicomElement) {
-        // Transfer ownership of the fragment's bytes to a local to copy into pixdata_info.pd_bytes.
-        let data = std::mem::replace(elem.mut_data(), Vec::with_capacity(0));
-        pixdata_info.pd_bytes.extend_from_slice(&data);
+        if pixdata_info.pd_bytes.is_empty() {
+            // The common case of a single-frame dataset, or the first frame of a multi-frame
+            // datset, swapping results in more efficient memory usage since the bytes do not need
+            // to be individually copied/moved.
+            std::mem::swap(&mut pixdata_info.pd_bytes, elem.mut_data());
+        } else {
+            // Otherwise the additional fragments have to be appended. Shrink the element's data
+            // buffer so it's not hanging on to an empty vec with a large capacity.
+            pixdata_info.pd_bytes.append(elem.mut_data());
+            elem.mut_data().shrink_to(0);
+        }
     }
 }

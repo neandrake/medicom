@@ -3,3 +3,5 @@ fixtures
 fixtures\.7z
 \.idea
 \.DS_Store
+dhat-heap.json
+dhat-ad-hoc.json

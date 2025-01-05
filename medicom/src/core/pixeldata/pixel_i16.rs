@@ -64,10 +64,10 @@ impl PixelDataSliceI16 {
         let mut in_pos: usize = 0;
         let mut min: i16 = i16::MAX;
         let mut max: i16 = i16::MIN;
-
+        let bytes = pdinfo.take_bytes();
         for _i in 0..len {
             for _j in 0..samples {
-                let val = i16::from(pdinfo.bytes()[in_pos]);
+                let val = i16::from(bytes[in_pos]);
                 in_pos += I8_SIZE;
                 buffer.push(val);
                 if pixel_pad.is_none_or(|pad_val| val != pad_val) {
@@ -116,32 +116,27 @@ impl PixelDataSliceI16 {
         let mut in_pos: usize = 0;
         let mut min: i16 = i16::MAX;
         let mut max: i16 = i16::MIN;
+        let bytes = pdinfo.take_bytes();
         for _i in 0..len {
             for _j in 0..samples {
                 let val = if pdinfo.big_endian() {
                     if pdinfo.is_signed() {
-                        let val = i16::from_be_bytes(
-                            pdinfo.bytes()[in_pos..in_pos + I16_SIZE].try_into()?,
-                        );
+                        let val = i16::from_be_bytes(bytes[in_pos..in_pos + I16_SIZE].try_into()?);
                         in_pos += I16_SIZE;
                         val
                     } else {
-                        let val = u16::from_be_bytes(
-                            pdinfo.bytes()[in_pos..in_pos + U16_SIZE].try_into()?,
-                        )
-                        .min(i16::MAX as u16) as i16;
+                        let val = u16::from_be_bytes(bytes[in_pos..in_pos + U16_SIZE].try_into()?)
+                            .min(i16::MAX as u16) as i16;
                         in_pos += U16_SIZE;
                         val
                     }
                 } else if pdinfo.is_signed() {
-                    let val =
-                        i16::from_le_bytes(pdinfo.bytes()[in_pos..in_pos + I16_SIZE].try_into()?);
+                    let val = i16::from_le_bytes(bytes[in_pos..in_pos + I16_SIZE].try_into()?);
                     in_pos += I16_SIZE;
                     val
                 } else {
-                    let val =
-                        u16::from_le_bytes(pdinfo.bytes()[in_pos..in_pos + U16_SIZE].try_into()?)
-                            .min(i16::MAX as u16) as i16;
+                    let val = u16::from_le_bytes(bytes[in_pos..in_pos + U16_SIZE].try_into()?)
+                        .min(i16::MAX as u16) as i16;
                     in_pos += U16_SIZE;
                     val
                 };
@@ -229,7 +224,13 @@ impl PixelDataSliceI16 {
     /// - If the x,y coordinate is invalid, either by being outside the image dimensions, or if the
     ///   Planar Configuration and Samples per Pixel are set up such that beginning of RGB values
     ///   must occur at specific indices.
-    pub fn get_pixel(&self, x: usize, y: usize, z: usize) -> Result<PixelI16, PixelDataError> {
+    pub fn get_pixel(
+        &self,
+        x: usize,
+        y: usize,
+        z: usize,
+        winlevel: &WindowLevel,
+    ) -> Result<PixelI16, PixelDataError> {
         let cols = usize::from(self.info().cols());
         let rows = usize::from(self.info().rows());
         let samples = usize::from(self.info().samples_per_pixel());
@@ -251,32 +252,13 @@ impl PixelDataSliceI16 {
         } else {
             // TODO: How to make this more composable, that can be configured via a custom
             //       iterator? E.g. apply rescale, then window/level, then colortable.
-            let value = self
+            let applied_val = self
                 .buffer()
                 .get(src_byte_index)
                 .copied()
                 .map(f64::from)
-                .map(|v| self.rescale(v));
-
-            let applied_val = self
-                .info()
-                .win_levels()
-                // XXX: The window/level computed from the min/max values seems to be better than
-                //      most window/levels specified in the dicom, at least prior to applying a
-                //      color-table.
-                .last()
-                .map(|winlevel| {
-                    // TODO: This only needs computed once instead of per-pixel.
-                    WindowLevel::new(
-                        winlevel.name().to_string(),
-                        self.rescale(winlevel.center()),
-                        self.rescale(winlevel.width()),
-                        winlevel.out_min(),
-                        winlevel.out_max(),
-                    )
-                })
-                .and_then(|winlevel| value.map(|v| winlevel.apply(v) as i16))
-                .or(value.map(|v| v as i16))
+                .map(|v| self.rescale(v))
+                .map(|v| winlevel.apply(v) as i16)
                 .or(self.info().pixel_pad().map(|v| v as i16))
                 .unwrap_or_default();
             let val = if self
@@ -296,8 +278,34 @@ impl PixelDataSliceI16 {
 
     #[must_use]
     pub fn pixel_iter(&self) -> SlicePixelI16Iter {
+        let winlevel = self
+            .info()
+            .win_levels()
+            // XXX: The window/level computed from the min/max values seems to be better than most
+            //      window/levels specified in the dicom, at least prior to applying a color-table.
+            .last()
+            .map(|winlevel| {
+                WindowLevel::new(
+                    winlevel.name().to_string(),
+                    self.rescale(winlevel.center()),
+                    self.rescale(winlevel.width()),
+                    winlevel.out_min(),
+                    winlevel.out_max(),
+                )
+            })
+            .unwrap_or_else(|| {
+                WindowLevel::new(
+                    "Default".to_string(),
+                    0_f64,
+                    f64::from(i16::MAX),
+                    f64::from(i16::MIN),
+                    f64::from(i16::MAX),
+                )
+            });
+
         SlicePixelI16Iter {
             slice: self,
+            winlevel,
             src_byte_index: 0,
         }
     }
@@ -305,6 +313,7 @@ impl PixelDataSliceI16 {
 
 pub struct SlicePixelI16Iter<'buf> {
     slice: &'buf PixelDataSliceI16,
+    winlevel: WindowLevel,
     src_byte_index: usize,
 }
 
@@ -317,7 +326,7 @@ impl Iterator for SlicePixelI16Iter<'_> {
         let x = self.src_byte_index % cols;
         let y = (self.src_byte_index / cols) % rows;
         let z = self.src_byte_index / (cols * rows);
-        let pixel = self.slice.get_pixel(x, y, z);
+        let pixel = self.slice.get_pixel(x, y, z, &self.winlevel);
         self.src_byte_index += 1;
         pixel.ok()
     }

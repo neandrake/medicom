@@ -32,3 +32,4 @@ walkdir = "2.5"
 
 [build-dependencies]
 medicom_dict = { path = "../medicom_dict", version = "0.5" }
+

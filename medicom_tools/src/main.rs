@@ -33,7 +33,16 @@ mod app;
 mod args;
 mod threadpool;
 
+
+#[cfg(feature = "dhat")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
+
 fn main() {
+    #[cfg(feature = "dhat")]
+    let _profiler = dhat::Profiler::new_heap();
+
     let mut app: Box<dyn CommandApplication> = make_app();
     if let Err(e) = app.run() {
         eprintln!("Error: {e:?}");

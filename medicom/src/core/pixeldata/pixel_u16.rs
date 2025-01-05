@@ -52,26 +52,27 @@ impl std::fmt::Debug for PixelDataSliceU16 {
 }
 
 impl PixelDataSliceU16 {
-    pub fn from_rgb_16bit(pdinfo: PixelDataSliceInfo) -> Result<Self, PixelDataError> {
+    pub fn from_rgb_16bit(mut pdinfo: PixelDataSliceInfo) -> Result<Self, PixelDataError> {
         let num_frames = usize::try_from(pdinfo.num_frames()).unwrap_or(1);
         let samples = usize::from(pdinfo.samples_per_pixel());
         let len = usize::from(pdinfo.cols()) * usize::from(pdinfo.rows()) * num_frames;
 
         let mut buffer: Vec<u16> = Vec::with_capacity(len * samples);
         let mut in_pos: usize = 0;
+        let bytes = pdinfo.take_bytes();
         for _i in 0..len {
             for _j in 0..samples {
                 let val = if pdinfo.big_endian() {
                     if pdinfo.is_signed() {
                         // There should't be signed values with RGB photometric interpretation.
                         let val = PixelDataSlice::shift_i16(i16::from_be_bytes(
-                            pdinfo.bytes()[in_pos..in_pos + I16_SIZE].try_into()?,
+                            bytes[in_pos..in_pos + I16_SIZE].try_into()?,
                         ));
                         in_pos += I16_SIZE;
                         val
                     } else {
                         let val = u16::from_be_bytes(
-                            pdinfo.bytes()[in_pos..in_pos + U16_SIZE].try_into()?,
+                            bytes[in_pos..in_pos + U16_SIZE].try_into()?,
                         );
                         in_pos += U16_SIZE;
                         val
@@ -79,13 +80,13 @@ impl PixelDataSliceU16 {
                 } else if pdinfo.is_signed() {
                     // There should't be signed values with RGB photometric interpretation.
                     let val = PixelDataSlice::shift_i16(i16::from_le_bytes(
-                        pdinfo.bytes()[in_pos..in_pos + I16_SIZE].try_into()?,
+                        bytes[in_pos..in_pos + I16_SIZE].try_into()?,
                     ));
                     in_pos += I16_SIZE;
                     val
                 } else {
                     let val =
-                        u16::from_le_bytes(pdinfo.bytes()[in_pos..in_pos + U16_SIZE].try_into()?);
+                        u16::from_le_bytes(bytes[in_pos..in_pos + U16_SIZE].try_into()?);
                     in_pos += U16_SIZE;
                     val
                 };
@@ -144,7 +145,7 @@ impl PixelDataSliceU16 {
     /// - If the x,y coordinate is invalid, either by being outside the image dimensions, or if the
     ///   Planar Configuration and Samples per Pixel are set up such that beginning of RGB values
     ///   must occur at specific indices.
-    pub fn get_pixel(&self, x: usize, y: usize, z: usize) -> Result<PixelU16, PixelDataError> {
+    pub fn get_pixel(&self, x: usize, y: usize, z: usize, winlevel: &WindowLevel) -> Result<PixelU16, PixelDataError> {
         let cols = usize::from(self.info().cols());
         let rows = usize::from(self.info().rows());
         let samples = usize::from(self.info().samples_per_pixel());
@@ -164,28 +165,13 @@ impl PixelDataSliceU16 {
             let blue = self.buffer()[src_byte_index + stride * 2];
             (red, green, blue)
         } else {
-            let value = self
+            let applied_val = self
                 .buffer()
                 .get(src_byte_index)
                 .copied()
                 .map(f64::from)
-                .map(|v| self.rescale(v));
-
-            let applied_val = self
-                .info()
-                .win_levels()
-                .first()
-                .map(|winlevel| {
-                    WindowLevel::new(
-                        winlevel.name().to_string(),
-                        self.rescale(winlevel.center()),
-                        self.rescale(winlevel.width()),
-                        winlevel.out_min(),
-                        winlevel.out_max(),
-                    )
-                })
-                .and_then(|winlevel| value.map(|v| winlevel.apply(v) as u16))
-                .or(value.map(|v| v as u16))
+                .map(|v| self.rescale(v))
+                .map(|v| winlevel.apply(v) as u16)
                 .or(self.info().pixel_pad())
                 .unwrap_or_default();
             let val = if self
@@ -205,8 +191,34 @@ impl PixelDataSliceU16 {
 
     #[must_use]
     pub fn pixel_iter(&self) -> SlicePixelU16Iter {
+        let winlevel = self
+            .info()
+            .win_levels()
+            // XXX: The window/level computed from the min/max values seems to be better than most
+            //      window/levels specified in the dicom, at least prior to applying a color-table.
+            .last()
+            .map(|winlevel| {
+                WindowLevel::new(
+                    winlevel.name().to_string(),
+                    self.rescale(winlevel.center()),
+                    self.rescale(winlevel.width()),
+                    winlevel.out_min(),
+                    winlevel.out_max(),
+                )
+            })
+            .unwrap_or_else(|| {
+                WindowLevel::new(
+                    "Default".to_string(),
+                    f64::from(u16::MAX) / 2_f64,
+                    f64::from(u16::MAX) / 2_f64,
+                    f64::from(u16::MIN),
+                    f64::from(u16::MAX),
+                )
+            });
+
         SlicePixelU16Iter {
             slice: self,
+            winlevel,
             src_byte_index: 0,
         }
     }
@@ -214,6 +226,7 @@ impl PixelDataSliceU16 {
 
 pub struct SlicePixelU16Iter<'buf> {
     slice: &'buf PixelDataSliceU16,
+    winlevel: WindowLevel,
     src_byte_index: usize,
 }
 
@@ -226,7 +239,7 @@ impl Iterator for SlicePixelU16Iter<'_> {
         let x = self.src_byte_index % cols;
         let y = (self.src_byte_index / cols) % rows;
         let z = self.src_byte_index / (cols * rows);
-        let pixel = self.slice.get_pixel(x, y, z);
+        let pixel = self.slice.get_pixel(x, y, z, &self.winlevel);
         self.src_byte_index += 1;
         pixel.ok()
     }

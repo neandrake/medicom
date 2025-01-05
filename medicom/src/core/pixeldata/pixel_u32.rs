@@ -52,40 +52,38 @@ impl std::fmt::Debug for PixelDataSliceU32 {
 }
 
 impl PixelDataSliceU32 {
-    pub fn from_rgb_32bit(pdinfo: PixelDataSliceInfo) -> Result<Self, PixelDataError> {
+    pub fn from_rgb_32bit(mut pdinfo: PixelDataSliceInfo) -> Result<Self, PixelDataError> {
         let num_frames = usize::try_from(pdinfo.num_frames()).unwrap_or(1);
         let samples = usize::from(pdinfo.samples_per_pixel());
         let len = usize::from(pdinfo.cols()) * usize::from(pdinfo.rows()) * num_frames;
 
         let mut in_pos: usize = 0;
         let mut buffer: Vec<u32> = Vec::with_capacity(len * samples);
+        let bytes = pdinfo.take_bytes();
         for _i in 0..len {
             for _j in 0..samples {
                 let val = if pdinfo.big_endian() {
                     if pdinfo.is_signed() {
                         // There shouldn't be signed data with RGB photometric interpretation.
                         let val = PixelDataSlice::shift_i32(i32::from_be_bytes(
-                            pdinfo.bytes()[in_pos..in_pos + I32_SIZE].try_into()?,
+                            bytes[in_pos..in_pos + I32_SIZE].try_into()?,
                         ));
                         in_pos += I32_SIZE;
                         val
                     } else {
-                        let val = u32::from_be_bytes(
-                            pdinfo.bytes()[in_pos..in_pos + U32_SIZE].try_into()?,
-                        );
+                        let val = u32::from_be_bytes(bytes[in_pos..in_pos + U32_SIZE].try_into()?);
                         in_pos += U32_SIZE;
                         val
                     }
                 } else if pdinfo.is_signed() {
                     // There shouldn't be signed data with RGB photometric interpretation.
                     let val = PixelDataSlice::shift_i32(i32::from_le_bytes(
-                        pdinfo.bytes()[in_pos..in_pos + I32_SIZE].try_into()?,
+                        bytes[in_pos..in_pos + I32_SIZE].try_into()?,
                     ));
                     in_pos += I32_SIZE;
                     val
                 } else {
-                    let val =
-                        u32::from_le_bytes(pdinfo.bytes()[in_pos..in_pos + U32_SIZE].try_into()?);
+                    let val = u32::from_le_bytes(bytes[in_pos..in_pos + U32_SIZE].try_into()?);
                     in_pos += U32_SIZE;
                     val
                 };
@@ -144,7 +142,13 @@ impl PixelDataSliceU32 {
     /// - If the x,y coordinate is invalid, either by being outside the image dimensions, or if the
     ///   Planar Configuration and Samples per Pixel are set up such that beginning of RGB values
     ///   must occur at specific indices.
-    pub fn get_pixel(&self, x: usize, y: usize, z: usize) -> Result<PixelU32, PixelDataError> {
+    pub fn get_pixel(
+        &self,
+        x: usize,
+        y: usize,
+        z: usize,
+        winlevel: &WindowLevel,
+    ) -> Result<PixelU32, PixelDataError> {
         let cols = usize::from(self.info().cols());
         let rows = usize::from(self.info().rows());
         let samples = usize::from(self.info().samples_per_pixel());
@@ -164,28 +168,13 @@ impl PixelDataSliceU32 {
             let blue = self.buffer()[src_byte_index + stride * 2];
             (red, green, blue)
         } else {
-            let value = self
+            let applied_val = self
                 .buffer()
                 .get(src_byte_index)
                 .copied()
                 .map(f64::from)
-                .map(|v| self.rescale(v));
-
-            let applied_val = self
-                .info()
-                .win_levels()
-                .first()
-                .map(|winlevel| {
-                    WindowLevel::new(
-                        winlevel.name().to_string(),
-                        self.rescale(winlevel.center()),
-                        self.rescale(winlevel.width()),
-                        winlevel.out_min(),
-                        winlevel.out_max(),
-                    )
-                })
-                .and_then(|winlevel| value.map(|v| winlevel.apply(v) as u32))
-                .or(value.map(|v| v as u32))
+                .map(|v| self.rescale(v))
+                .map(|v| winlevel.apply(v) as u32)
                 .or(self.info().pixel_pad().map(|v| v as u32))
                 .unwrap_or_default();
             let val = if self
@@ -205,8 +194,34 @@ impl PixelDataSliceU32 {
 
     #[must_use]
     pub fn pixel_iter(&self) -> SlicePixelU32Iter {
+        let winlevel = self
+            .info()
+            .win_levels()
+            // XXX: The window/level computed from the min/max values seems to be better than most
+            //      window/levels specified in the dicom, at least prior to applying a color-table.
+            .last()
+            .map(|winlevel| {
+                WindowLevel::new(
+                    winlevel.name().to_string(),
+                    self.rescale(winlevel.center()),
+                    self.rescale(winlevel.width()),
+                    winlevel.out_min(),
+                    winlevel.out_max(),
+                )
+            })
+            .unwrap_or_else(|| {
+                WindowLevel::new(
+                    "Default".to_string(),
+                    f64::from(u32::MAX) / 2_f64,
+                    f64::from(u32::MAX) / 2_f64,
+                    f64::from(i32::MIN),
+                    f64::from(i32::MAX),
+                )
+            });
+
         SlicePixelU32Iter {
             slice: self,
+            winlevel,
             src_byte_index: 0,
         }
     }
@@ -214,6 +229,7 @@ impl PixelDataSliceU32 {
 
 pub struct SlicePixelU32Iter<'buf> {
     slice: &'buf PixelDataSliceU32,
+    winlevel: WindowLevel,
     src_byte_index: usize,
 }
 
@@ -226,7 +242,7 @@ impl Iterator for SlicePixelU32Iter<'_> {
         let x = self.src_byte_index % cols;
         let y = (self.src_byte_index / cols) % rows;
         let z = self.src_byte_index / (cols * rows);
-        let pixel = self.slice.get_pixel(x, y, z);
+        let pixel = self.slice.get_pixel(x, y, z, &self.winlevel);
         self.src_byte_index += 1;
         pixel.ok()
     }
