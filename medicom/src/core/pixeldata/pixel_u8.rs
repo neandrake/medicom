@@ -84,6 +84,11 @@ impl PixelDataSliceU8 {
     }
 
     #[must_use]
+    pub fn into_buffer(self) -> Vec<u8> {
+        self.buffer
+    }
+
+    #[must_use]
     pub fn stride(&self) -> usize {
         self.stride
     }

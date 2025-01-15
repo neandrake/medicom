@@ -149,6 +149,11 @@ impl PixelDataSliceI32 {
     }
 
     #[must_use]
+    pub fn into_buffer(self) -> Vec<i32> {
+        self.buffer
+    }
+
+    #[must_use]
     pub fn stride(&self) -> usize {
         self.stride
     }

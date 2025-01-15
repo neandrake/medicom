@@ -17,15 +17,25 @@
 //! The image command extracts pixel data and encodes it as a standard image format.
 
 use anyhow::{anyhow, Result};
+use egui::{
+    generate_loader_id,
+    load::{ImageLoader, ImagePoll, LoadError},
+    mutex::Mutex,
+    ColorImage, SizeHint,
+};
 use image::{ImageBuffer, Rgb};
 use medicom::core::{
     defn::ts::TSRef,
     pixeldata::{
-        pdinfo::PixelDataSliceInfo, pdslice::PixelDataSlice, pixel_i16::PixelI16,
-        pixel_u16::PixelU16, pixel_u8::PixelU8,
+        pdinfo::PixelDataSliceInfo, pdslice::PixelDataSlice, pdwinlevel::WindowLevel,
+        pixel_i16::PixelI16, pixel_u16::PixelU16, pixel_u8::PixelU8,
     },
 };
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use crate::{app::parse_file, args::ImageArgs, CommandApplication};
 
@@ -45,10 +55,19 @@ impl ImageApp {
 
 impl CommandApplication for ImageApp {
     fn run(&mut self) -> Result<()> {
-        let path_buf: PathBuf = self.args.file.clone();
-        let mut output_path_buf = self.args.output.clone();
-        let path: &Path = path_buf.as_path();
-        let parser = parse_file(path, true)?;
+        if true {
+            ImageViewer::open_viewer(self.args.file.clone())?;
+        } else {
+            ImageExtractor::extract_image(&self.args.file, &mut self.args.output)?;
+        }
+        Ok(())
+    }
+}
+
+struct ImageExtractor;
+impl ImageExtractor {
+    fn extract_image(input: &Path, output: &mut PathBuf) -> Result<()> {
+        let parser = parse_file(input, true)?;
 
         if ImageApp::is_jpeg(parser.ts()) {
             return Err(anyhow!(
@@ -61,12 +80,12 @@ impl CommandApplication for ImageApp {
         let pixdata_buffer = pixdata_info.load_pixel_data()?;
         dbg!(&pixdata_buffer);
 
-        let extension = output_path_buf
+        let extension = output
             .extension()
             .and_then(|extension| extension.to_owned().into_string().ok())
             .unwrap_or("png".to_owned());
-        output_path_buf.set_extension("");
-        let filename = output_path_buf
+        output.set_extension("");
+        let filename = output
             .file_name()
             .and_then(|filename| filename.to_owned().into_string().ok())
             .unwrap_or("image".to_string());
@@ -129,7 +148,6 @@ impl CommandApplication for ImageApp {
                     last_z = z;
                     image.put_pixel(u32::try_from(x)?, u32::try_from(y)?, Rgb([r, g, b]));
                 }
-
                 image.save(format!("{filename}.{last_z}.{extension}"))?;
             }
             other => {
@@ -138,5 +156,183 @@ impl CommandApplication for ImageApp {
         }
 
         Ok(())
+    }
+}
+
+#[derive(Default)]
+struct DicomFileImageLoader {
+    cache: Mutex<HashMap<String, Arc<ColorImage>>>,
+}
+
+impl DicomFileImageLoader {
+    pub fn load_dicom(&self, file: &Path) -> Result<()> {
+        let parser = parse_file(file, true)?;
+
+        if ImageApp::is_jpeg(parser.ts()) {
+            return Err(anyhow!(
+                "Unsupported TransferSyntax: {}",
+                parser.ts().uid().name()
+            ));
+        }
+
+        let pixdata_info = PixelDataSliceInfo::process_dcm_parser(parser)?;
+        let pixdata_buffer = pixdata_info.load_pixel_data()?;
+        dbg!(&pixdata_buffer);
+
+        match pixdata_buffer {
+            PixelDataSlice::U8(pdslice) => {
+                let width = pdslice.info().rows().into();
+                let height = pdslice.info().cols().into();
+                let image = ColorImage::from_rgb([width, height], pdslice.buffer());
+                self.cache
+                    .lock()
+                    .insert(format!("dicom://{}", file.display()), Arc::new(image));
+            }
+            PixelDataSlice::U16(pdslice) => {
+                // WindowLevel to map i16 values into u8.
+                let win = WindowLevel::new(
+                    "".to_string(),
+                    f64::from(i16::MAX) / 2_f64,
+                    f64::from(i16::MAX),
+                    f64::from(u8::MIN),
+                    f64::from(u8::MAX),
+                );
+                let width = pdslice.info().rows().into();
+                let height = pdslice.info().cols().into();
+
+                let iter = pdslice.pixel_iter_with_win(win).map(|p| p.r as u8);
+                let image = ColorImage::from_gray_iter([width, height], iter);
+                self.cache
+                    .lock()
+                    .insert(format!("dicom://{}", file.display()), Arc::new(image));
+            }
+            PixelDataSlice::I16(pdslice) => {
+                // WindowLevel to map i16 values into u8.
+                let win = pdslice
+                    .info()
+                    .win_levels()
+                    .last()
+                    .map(|w| {
+                        WindowLevel::new(
+                            w.name().to_string(),
+                            pdslice.rescale(w.center()),
+                            pdslice.rescale(w.width()),
+                            f64::from(u8::MIN),
+                            f64::from(u8::MAX),
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        WindowLevel::new(
+                            "".to_string(),
+                            0_f64,
+                            f64::from(i16::MAX),
+                            f64::from(u8::MIN),
+                            f64::from(u8::MAX),
+                        )
+                    });
+                let width = pdslice.info().rows().into();
+                let height = pdslice.info().cols().into();
+
+                let iter = pdslice.pixel_iter_with_win(win).map(|p| p.r as u8);
+                let image = ColorImage::from_gray_iter([width, height], iter);
+                self.cache
+                    .lock()
+                    .insert(format!("dicom://{}", file.display()), Arc::new(image));
+            }
+            other => {
+                return Err(anyhow!("Unsupported PixelData: {other:?}"));
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl ImageLoader for DicomFileImageLoader {
+    fn id(&self) -> &str {
+        generate_loader_id!(DicomFileImageLoader)
+    }
+
+    fn load(&self, _ctx: &egui::Context, uri: &str, _: SizeHint) -> egui::load::ImageLoadResult {
+        if let Some(image) = self.cache.lock().get(uri) {
+            Ok(ImagePoll::Ready {
+                image: image.clone(),
+            })
+        } else {
+            let uri = uri.trim_start_matches("dicom://");
+            self.load_dicom(&PathBuf::from(uri))
+                .map_err(|e| LoadError::Loading(format!("{e:?}")))?;
+            Err(LoadError::NotSupported)
+        }
+    }
+
+    fn forget(&self, uri: &str) {
+        self.cache.lock().remove(uri);
+    }
+
+    fn forget_all(&self) {
+        self.cache.lock().clear();
+    }
+
+    fn byte_size(&self) -> usize {
+        self.cache
+            .lock()
+            .values()
+            .map(|image| image.as_raw().len())
+            .sum()
+    }
+}
+
+struct ImageViewer {
+    input: PathBuf,
+}
+
+impl ImageViewer {
+    fn new(input: PathBuf, cc: &eframe::CreationContext<'_>) -> Result<Self> {
+        let loader = Arc::new(DicomFileImageLoader::default());
+        loader.load_dicom(&input)?;
+        cc.egui_ctx.add_image_loader(loader);
+        Ok(Self { input })
+    }
+
+    fn open_viewer(input: PathBuf) -> Result<()> {
+        let native_options = eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default()
+                .with_inner_size([400.0, 300.0])
+                .with_min_inner_size([300.0, 220.0]),
+            ..Default::default()
+        };
+
+        eframe::run_native(
+            "medicom_image_viewer",
+            native_options,
+            Box::new(|cc| Ok(Box::new(ImageViewer::new(input, cc)?))),
+        )?;
+
+        Ok(())
+    }
+}
+
+impl eframe::App for ImageViewer {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            egui::menu::bar(ui, |ui| {
+                ui.menu_button("File", |ui| {
+                    let quit_btn = ui.button("Quit");
+                    if quit_btn.clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                });
+                ui.add_space(16.0);
+            });
+        });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("Image Viewer");
+            ui.add(egui::Image::from_uri(format!(
+                "dicom://{}",
+                self.input.display()
+            )));
+        });
     }
 }

@@ -125,6 +125,11 @@ impl PixelDataSliceU16 {
     }
 
     #[must_use]
+    pub fn into_buffer(self) -> Vec<u16> {
+        self.buffer
+    }
+
+    #[must_use]
     pub fn stride(&self) -> usize {
         self.stride
     }
@@ -216,6 +221,11 @@ impl PixelDataSliceU16 {
                 )
             });
 
+        self.pixel_iter_with_win(winlevel)
+    }
+
+    #[must_use]
+    pub fn pixel_iter_with_win(&self, winlevel: WindowLevel) -> SlicePixelU16Iter {
         SlicePixelU16Iter {
             slice: self,
             winlevel,

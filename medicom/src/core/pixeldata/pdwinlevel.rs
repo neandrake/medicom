@@ -32,7 +32,7 @@ impl WindowLevel {
             center,
             width,
             out_min,
-            out_max
+            out_max,
         }
     }
 
@@ -79,6 +79,17 @@ impl WindowLevel {
 
     pub fn set_out_max(&mut self, out_max: f64) {
         self.out_max = out_max;
+    }
+
+    #[must_use]
+    pub fn with_out(&self, out_min: f64, out_max: f64) -> Self {
+        Self::new(
+            self.name().to_string(),
+            self.center(),
+            self.width(),
+            out_min,
+            out_max,
+        )
     }
 
     /// Converts the given value to this window/level, per Part 3, Section C.11.2.1.2.1.
