@@ -39,13 +39,15 @@ use medicom::{
 pub(crate) mod archiveapp;
 pub(crate) mod browseapp;
 #[cfg(feature = "image")]
-pub(crate) mod imageapp;
+pub(crate) mod extractapp;
 #[cfg(feature = "index")]
 pub(crate) mod indexapp;
 pub(crate) mod printapp;
 #[cfg(feature = "index")]
 pub(crate) mod scpapp;
 pub(crate) mod scuapp;
+#[cfg(feature = "image")]
+pub(crate) mod viewapp;
 
 pub(crate) trait CommandApplication {
     fn run(&mut self) -> Result<()>;

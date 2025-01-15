@@ -21,7 +21,7 @@ use std::process;
 use clap::Parser;
 
 #[cfg(feature = "image")]
-use crate::app::imageapp::ImageApp;
+use crate::app::{extractapp::ExtractApp, viewapp::ViewApp};
 
 #[cfg(feature = "index")]
 use crate::app::{indexapp::IndexApp, scpapp::SvcProviderApp};
@@ -60,7 +60,9 @@ fn make_app() -> Box<dyn CommandApplication> {
         Command::Print(args) => Box::new(PrintApp::new(args)),
         Command::Browse(args) => Box::new(BrowseApp::new(args)),
         #[cfg(feature = "image")]
-        Command::Image(args) => Box::new(ImageApp::new(args)),
+        Command::Extract(args) => Box::new(ExtractApp::new(args)),
+        #[cfg(feature = "image")]
+        Command::View(args) => Box::new(ViewApp::new(args)),
         #[cfg(feature = "index")]
         Command::Index(args) => Box::new(IndexApp::new(args)),
         Command::Archive(args) => Box::new(ArchiveApp::new(args)),

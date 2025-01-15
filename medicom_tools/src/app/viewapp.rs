@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-//! The image command extracts pixel data and encodes it as a standard image format.
+//! This command opens a viewer for a DICOM image.
 
 use anyhow::{anyhow, Result};
 use egui::{
@@ -23,13 +23,8 @@ use egui::{
     mutex::Mutex,
     ColorImage, SizeHint,
 };
-use image::{ImageBuffer, Rgb};
-use medicom::core::{
-    defn::ts::TSRef,
-    pixeldata::{
-        pdinfo::PixelDataSliceInfo, pdslice::PixelDataSlice, pdwinlevel::WindowLevel,
-        pixel_i16::PixelI16, pixel_u16::PixelU16, pixel_u8::PixelU8,
-    },
+use medicom::core::pixeldata::{
+    pdinfo::PixelDataSliceInfo, pdslice::PixelDataSlice, pdwinlevel::WindowLevel,
 };
 use std::{
     collections::HashMap,
@@ -37,125 +32,25 @@ use std::{
     sync::Arc,
 };
 
-use crate::{app::parse_file, args::ImageArgs, CommandApplication};
+use crate::{
+    app::{extractapp::ExtractApp, parse_file},
+    args::ViewArgs,
+    CommandApplication,
+};
 
-pub struct ImageApp {
-    args: ImageArgs,
+pub struct ViewApp {
+    args: ViewArgs,
 }
 
-impl ImageApp {
-    pub fn new(args: ImageArgs) -> ImageApp {
-        ImageApp { args }
-    }
-
-    fn is_jpeg(ts: TSRef) -> bool {
-        ts.uid().name().contains("JPEG")
+impl ViewApp {
+    pub fn new(args: ViewArgs) -> Self {
+        Self { args }
     }
 }
 
-impl CommandApplication for ImageApp {
+impl CommandApplication for ViewApp {
     fn run(&mut self) -> Result<()> {
-        if true {
-            ImageViewer::open_viewer(self.args.file.clone())?;
-        } else {
-            ImageExtractor::extract_image(&self.args.file, &mut self.args.output)?;
-        }
-        Ok(())
-    }
-}
-
-struct ImageExtractor;
-impl ImageExtractor {
-    fn extract_image(input: &Path, output: &mut PathBuf) -> Result<()> {
-        let parser = parse_file(input, true)?;
-
-        if ImageApp::is_jpeg(parser.ts()) {
-            return Err(anyhow!(
-                "Unsupported TransferSyntax: {}",
-                parser.ts().uid().name()
-            ));
-        }
-
-        let pixdata_info = PixelDataSliceInfo::process_dcm_parser(parser)?;
-        let pixdata_buffer = pixdata_info.load_pixel_data()?;
-        dbg!(&pixdata_buffer);
-
-        let extension = output
-            .extension()
-            .and_then(|extension| extension.to_owned().into_string().ok())
-            .unwrap_or("png".to_owned());
-        output.set_extension("");
-        let filename = output
-            .file_name()
-            .and_then(|filename| filename.to_owned().into_string().ok())
-            .unwrap_or("image".to_string());
-
-        match pixdata_buffer {
-            PixelDataSlice::U8(pdslice) => {
-                let mut image: ImageBuffer<Rgb<u8>, Vec<u8>> =
-                    ImageBuffer::new(pdslice.info().cols().into(), pdslice.info().rows().into());
-                let mut last_z = 0;
-                for PixelU8 { x, y, z, r, g, b } in pdslice.pixel_iter() {
-                    if z != last_z {
-                        image.save(format!("{filename}.{last_z}.{extension}"))?;
-                        image = ImageBuffer::new(
-                            pdslice.info().cols().into(),
-                            pdslice.info().rows().into(),
-                        );
-                    }
-                    last_z = z;
-                    image.put_pixel(u32::try_from(x)?, u32::try_from(y)?, Rgb([r, g, b]));
-                }
-                image.save(format!("{filename}.{last_z}.{extension}"))?;
-            }
-            PixelDataSlice::U16(pdslice) => {
-                let mut image: ImageBuffer<Rgb<u16>, Vec<u16>> =
-                    ImageBuffer::new(pdslice.info().cols().into(), pdslice.info().rows().into());
-                let mut last_z = 0;
-                for PixelU16 { x, y, z, r, g, b } in pdslice.pixel_iter() {
-                    if z != last_z {
-                        image.save(format!("{filename}.{last_z}.{extension}"))?;
-                        image = ImageBuffer::new(
-                            pdslice.info().cols().into(),
-                            pdslice.info().rows().into(),
-                        );
-                    }
-                    last_z = z;
-                    image.put_pixel(u32::try_from(x)?, u32::try_from(y)?, Rgb([r, g, b]));
-                }
-                image.save(format!("{filename}.{last_z}.{extension}"))?;
-            }
-            PixelDataSlice::I16(pdslice) => {
-                let mut image: ImageBuffer<Rgb<u16>, Vec<u16>> =
-                    ImageBuffer::new(pdslice.info().cols().into(), pdslice.info().rows().into());
-                let mut last_z = 0;
-                for PixelU16 { x, y, z, r, g, b } in
-                    // The "image" crate does not support i16 pixel values.
-                    pdslice.pixel_iter().map(|PixelI16 { x, y, z, r, g, b }| {
-                            let r = PixelDataSlice::shift_i16(r);
-                            let g = PixelDataSlice::shift_i16(g);
-                            let b = PixelDataSlice::shift_i16(b);
-                            PixelU16 { x, y, z, r, g, b }
-                        })
-                {
-                    if z != last_z {
-                        image.save(format!("{filename}.{last_z}.{extension}"))?;
-                        image = ImageBuffer::new(
-                            pdslice.info().cols().into(),
-                            pdslice.info().rows().into(),
-                        );
-                    }
-                    last_z = z;
-                    image.put_pixel(u32::try_from(x)?, u32::try_from(y)?, Rgb([r, g, b]));
-                }
-                image.save(format!("{filename}.{last_z}.{extension}"))?;
-            }
-            other => {
-                return Err(anyhow!("Unsupported PixelData: {other:?}"));
-            }
-        }
-
-        Ok(())
+        ImageViewer::open_viewer(self.args.file.clone())
     }
 }
 
@@ -168,7 +63,7 @@ impl DicomFileImageLoader {
     pub fn load_dicom(&self, file: &Path) -> Result<()> {
         let parser = parse_file(file, true)?;
 
-        if ImageApp::is_jpeg(parser.ts()) {
+        if ExtractApp::is_jpeg(parser.ts()) {
             return Err(anyhow!(
                 "Unsupported TransferSyntax: {}",
                 parser.ts().uid().name()

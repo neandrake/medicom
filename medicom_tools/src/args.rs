@@ -34,9 +34,13 @@ pub enum Command {
     /// Browse a DICOM dataset in a text-based user interface.
     Browse(BrowseArgs),
 
-    /// Encodes Pixel Data into a standard image format.
+    /// Extract Pixel Data from a DICOM file into a standard image format.
     #[cfg(feature = "image")]
-    Image(ImageArgs),
+    Extract(ExtractArgs),
+
+    /// Opens a window to view image data for a DICOM file.
+    #[cfg(feature = "image")]
+    View(ViewArgs),
 
     /// Manage a database index of DICOM on disk.
     ///
@@ -66,9 +70,15 @@ pub struct PrintArgs {
     pub file: PathBuf,
 }
 
+#[derive(Args, Debug)]
+pub struct BrowseArgs {
+    /// The file to process as a DICOM dataset.
+    pub file: PathBuf,
+}
+
 #[cfg(feature = "image")]
 #[derive(Args, Debug)]
-pub struct ImageArgs {
+pub struct ExtractArgs {
     /// The DICOM file to extract image data from.
     pub file: PathBuf,
 
@@ -76,9 +86,10 @@ pub struct ImageArgs {
     pub output: PathBuf,
 }
 
+#[cfg(feature = "image")]
 #[derive(Args, Debug)]
-pub struct BrowseArgs {
-    /// The file to process as a DICOM dataset.
+pub struct ViewArgs {
+    /// The DICOM file to view.
     pub file: PathBuf,
 }
 
