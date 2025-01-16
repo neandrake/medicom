@@ -21,15 +21,16 @@ use egui::{
     generate_loader_id,
     load::{ImageLoader, ImagePoll, LoadError},
     mutex::Mutex,
-    ColorImage, SizeHint,
+    ColorImage, Margin, SizeHint,
 };
 use medicom::core::pixeldata::{
     pdinfo::PixelDataSliceInfo, pdslice::PixelDataSlice, pdwinlevel::WindowLevel,
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
+    thread,
 };
 
 use crate::{
@@ -50,17 +51,56 @@ impl ViewApp {
 
 impl CommandApplication for ViewApp {
     fn run(&mut self) -> Result<()> {
-        ImageViewer::open_viewer(self.args.file.clone())
+        ImageViewer::open_viewer(self.args.input.clone())
+    }
+}
+
+#[derive(PartialEq, Eq, Hash)]
+struct DicomUri {
+    path: String,
+}
+
+impl DicomUri {}
+
+impl From<&str> for DicomUri {
+    fn from(value: &str) -> Self {
+        Self {
+            path: value.trim_start_matches("dicom://").to_string(),
+        }
+    }
+}
+
+impl From<&Path> for DicomUri {
+    fn from(value: &Path) -> Self {
+        Self {
+            path: value.display().to_string(),
+        }
+    }
+}
+
+impl From<&PathBuf> for DicomUri {
+    fn from(value: &PathBuf) -> Self {
+        DicomUri::from(value.as_path())
     }
 }
 
 #[derive(Default)]
 struct DicomFileImageLoader {
-    cache: Mutex<HashMap<String, Arc<ColorImage>>>,
+    cache: Mutex<HashMap<DicomUri, Arc<ColorImage>>>,
+    failed: Mutex<HashSet<DicomUri>>,
 }
 
 impl DicomFileImageLoader {
-    pub fn load_dicom(&self, file: &Path) -> Result<()> {
+    fn load_files(&self, files: &Vec<PathBuf>) {
+        for file in files {
+            if let Err(e) = self.load_dicom_file(file) {
+                self.failed.lock().insert(DicomUri::from(file));
+                eprintln!("Failed to load: {e:?}");
+            }
+        }
+    }
+
+    fn load_dicom_file(&self, file: &Path) -> Result<()> {
         let parser = parse_file(file, true)?;
 
         if ExtractApp::is_jpeg(parser.ts()) {
@@ -72,7 +112,7 @@ impl DicomFileImageLoader {
 
         let pixdata_info = PixelDataSliceInfo::process_dcm_parser(parser)?;
         let pixdata_buffer = pixdata_info.load_pixel_data()?;
-        dbg!(&pixdata_buffer);
+        //dbg!(&pixdata_buffer);
 
         match pixdata_buffer {
             PixelDataSlice::U8(pdslice) => {
@@ -81,7 +121,7 @@ impl DicomFileImageLoader {
                 let image = ColorImage::from_rgb([width, height], pdslice.buffer());
                 self.cache
                     .lock()
-                    .insert(format!("dicom://{}", file.display()), Arc::new(image));
+                    .insert(DicomUri::from(file), Arc::new(image));
             }
             PixelDataSlice::U16(pdslice) => {
                 // WindowLevel to map i16 values into u8.
@@ -99,7 +139,7 @@ impl DicomFileImageLoader {
                 let image = ColorImage::from_gray_iter([width, height], iter);
                 self.cache
                     .lock()
-                    .insert(format!("dicom://{}", file.display()), Arc::new(image));
+                    .insert(DicomUri::from(file), Arc::new(image));
             }
             PixelDataSlice::I16(pdslice) => {
                 // WindowLevel to map i16 values into u8.
@@ -132,7 +172,7 @@ impl DicomFileImageLoader {
                 let image = ColorImage::from_gray_iter([width, height], iter);
                 self.cache
                     .lock()
-                    .insert(format!("dicom://{}", file.display()), Arc::new(image));
+                    .insert(DicomUri::from(file), Arc::new(image));
             }
             other => {
                 return Err(anyhow!("Unsupported PixelData: {other:?}"));
@@ -140,6 +180,14 @@ impl DicomFileImageLoader {
         }
 
         Ok(())
+    }
+
+    fn is_loaded(&self, uri: &DicomUri) -> bool {
+        self.cache.lock().contains_key(uri)
+    }
+
+    fn is_failed(&self, uri: &DicomUri) -> bool {
+        self.failed.lock().contains(uri)
     }
 }
 
@@ -149,20 +197,24 @@ impl ImageLoader for DicomFileImageLoader {
     }
 
     fn load(&self, _ctx: &egui::Context, uri: &str, _: SizeHint) -> egui::load::ImageLoadResult {
-        if let Some(image) = self.cache.lock().get(uri) {
+        let cache = self.cache.lock();
+        if let Some(image) = cache.get(&DicomUri::from(uri)) {
             Ok(ImagePoll::Ready {
                 image: image.clone(),
             })
         } else {
-            let uri = uri.trim_start_matches("dicom://");
-            self.load_dicom(&PathBuf::from(uri))
+            // Must release the lock used to check the cache before it can be used in
+            // load_dicom_file, otherwise this inflicts a deadlock.
+            drop(cache);
+            let uri = DicomUri::from(uri).path;
+            self.load_dicom_file(&PathBuf::from(uri))
                 .map_err(|e| LoadError::Loading(format!("{e:?}")))?;
             Err(LoadError::NotSupported)
         }
     }
 
     fn forget(&self, uri: &str) {
-        self.cache.lock().remove(uri);
+        self.cache.lock().remove(&DicomUri::from(uri));
     }
 
     fn forget_all(&self) {
@@ -179,32 +231,84 @@ impl ImageLoader for DicomFileImageLoader {
 }
 
 struct ImageViewer {
-    input: PathBuf,
+    image_files: Vec<PathBuf>,
+    current_image: usize,
+    image_loader: Arc<DicomFileImageLoader>,
 }
 
 impl ImageViewer {
     fn new(input: PathBuf, cc: &eframe::CreationContext<'_>) -> Result<Self> {
+        let mut image_files = Vec::new();
+        if input.is_dir() {
+            let files = input.read_dir()?;
+            for file in files {
+                let file = file?.path();
+                image_files.push(file);
+            }
+        } else if input.is_file() {
+            image_files.push(input.clone());
+        }
+        let current_image = image_files.len() / 2;
         let loader = Arc::new(DicomFileImageLoader::default());
-        loader.load_dicom(&input)?;
+
+        let loader_for_loading = loader.clone();
+        let image_files_for_loading = image_files.clone();
+        thread::spawn(move || {
+            loader_for_loading.load_files(&image_files_for_loading);
+        });
+
+        let loader_for_self = loader.clone();
         cc.egui_ctx.add_image_loader(loader);
-        Ok(Self { input })
+        Ok(Self {
+            image_files,
+            current_image,
+            image_loader: loader_for_self,
+        })
     }
 
     fn open_viewer(input: PathBuf) -> Result<()> {
         let native_options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
-                .with_inner_size([400.0, 300.0])
-                .with_min_inner_size([300.0, 220.0]),
+                .with_inner_size([1024.0, 768.0])
+                .with_min_inner_size([1024.0, 768.0]),
             ..Default::default()
         };
 
         eframe::run_native(
-            "medicom_image_viewer",
+            "Medicom Image Viewer",
             native_options,
             Box::new(|cc| Ok(Box::new(ImageViewer::new(input, cc)?))),
         )?;
 
         Ok(())
+    }
+
+    fn create_progress(&mut self) -> egui::ProgressBar {
+        self.image_files
+            .retain(|f| !self.image_loader.is_failed(&DicomUri::from(f)));
+        let mut loaded_count = 0_f32;
+        for file in &self.image_files {
+            if self.image_loader.is_loaded(&DicomUri::from(file)) {
+                loaded_count += 1_f32;
+            }
+        }
+        let progress = loaded_count / self.image_files.len() as f32;
+        if progress < 1_f32 {
+            let progress_text = format!(
+                "Loading images {}/{}...",
+                loaded_count as usize,
+                self.image_files.len()
+            );
+            egui::ProgressBar::new(progress)
+                .animate(true)
+                .show_percentage()
+                .text(progress_text)
+        } else {
+            let progress_text = format!("Loaded {} images", loaded_count as usize);
+            egui::ProgressBar::new(progress)
+                .show_percentage()
+                .text(progress_text)
+        }
     }
 }
 
@@ -223,11 +327,21 @@ impl eframe::App for ImageViewer {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Image Viewer");
-            ui.add(egui::Image::from_uri(format!(
-                "dicom://{}",
-                self.input.display()
-            )));
+            ui.spacing_mut().window_margin = Margin::same(5.0);
+
+            ui.add(self.create_progress());
+            if ui.input(|i| i.key_pressed(egui::Key::ArrowUp) || i.key_down(egui::Key::K)) {
+                if self.current_image > 0 {
+                    self.current_image -= 1;
+                }
+            } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown) || i.key_down(egui::Key::J))
+                && self.current_image != self.image_files.len() - 1
+            {
+                self.current_image += 1;
+            }
+            let cur_image_uri =
+                format!("dicom://{}", self.image_files[self.current_image].display());
+            ui.add(egui::Image::from_uri(cur_image_uri));
         });
     }
 }

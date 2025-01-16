@@ -89,8 +89,8 @@ pub struct ExtractArgs {
 #[cfg(feature = "image")]
 #[derive(Args, Debug)]
 pub struct ViewArgs {
-    /// The DICOM file to view.
-    pub file: PathBuf,
+    /// A folder containing DICOM files to view.
+    pub input: PathBuf,
 }
 
 #[cfg(feature = "index")]
