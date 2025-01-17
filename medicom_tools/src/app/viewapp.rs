@@ -248,6 +248,7 @@ impl ImageViewer {
         } else if input.is_file() {
             image_files.push(input.clone());
         }
+        // TODO: Sort by position
         let current_image = image_files.len() / 2;
         let loader = Arc::new(DicomFileImageLoader::default());
 

@@ -161,7 +161,7 @@ impl DicomElement {
     }
 
     #[must_use]
-    pub fn mut_data(&mut self) -> &mut Vec<u8> {
+    pub fn data_mut(&mut self) -> &mut Vec<u8> {
         &mut self.data
     }
 

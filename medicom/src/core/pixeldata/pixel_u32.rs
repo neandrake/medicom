@@ -224,6 +224,11 @@ impl PixelDataSliceU32 {
                 )
             });
 
+        self.pixel_iter_with_win(winlevel)
+    }
+
+    #[must_use]
+    pub fn pixel_iter_with_win(&self, winlevel: WindowLevel) -> SlicePixelU32Iter {
         SlicePixelU32Iter {
             slice: self,
             winlevel,

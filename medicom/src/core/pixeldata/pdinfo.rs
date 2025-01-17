@@ -18,7 +18,7 @@ use std::io::Read;
 
 use crate::{
     core::{
-        dcmelement::DicomElement,
+        dcmobject::DicomRoot,
         defn::vr::{self, VRRef},
         pixeldata::{
             pdslice::PixelDataSlice, pdwinlevel::WindowLevel, pixel_i16::PixelDataSliceI16,
@@ -41,6 +41,7 @@ pub const U32_SIZE: usize = size_of::<u32>();
 
 /// Parsed tag values relevant to interpreting Pixel Data, including the raw `PixelData` bytes.
 pub struct PixelDataSliceInfo {
+    dcmroot: DicomRoot,
     big_endian: bool,
     vr: VRRef,
     samples_per_pixel: u16,
@@ -61,10 +62,12 @@ pub struct PixelDataSliceInfo {
     pd_bytes: Vec<u8>,
 }
 
-impl Default for PixelDataSliceInfo {
-    fn default() -> Self {
-        Self {
-            big_endian: false,
+impl PixelDataSliceInfo {
+    fn new(dcmroot: DicomRoot) -> Self {
+        let big_endian = dcmroot.ts().big_endian();
+        let mut pdinfo = Self {
+            dcmroot,
+            big_endian,
             vr: &vr::OB,
             samples_per_pixel: 0,
             photo_interp: None,
@@ -82,7 +85,179 @@ impl Default for PixelDataSliceInfo {
             unit: String::new(),
             win_levels: Vec::with_capacity(0),
             pd_bytes: Vec::with_capacity(0),
+        };
+
+        if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::SamplesperPixel)
+            .and_then(|v| v.ushort())
+        {
+            pdinfo.samples_per_pixel = val;
         }
+        if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::PhotometricInterpretation)
+            .and_then(|v| v.string().cloned())
+        {
+            pdinfo.photo_interp = Some(Into::<PhotoInterp>::into(val.as_str()));
+        }
+        if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::PlanarConfiguration)
+            .and_then(|v| v.ushort())
+        {
+            pdinfo.planar_config = val;
+        }
+        if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::NumberofFrames)
+            .and_then(|v| v.int())
+        {
+            pdinfo.num_frames = val;
+        }
+        if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::Rows)
+            .and_then(|v| v.ushort())
+        {
+            pdinfo.rows = val;
+        }
+        if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::Columns)
+            .and_then(|v| v.ushort())
+        {
+            pdinfo.cols = val;
+        }
+        if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::BitsAllocated)
+            .and_then(|v| v.ushort())
+        {
+            pdinfo.bits_alloc = BitsAlloc::from_val(val);
+        }
+        if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::BitsStored)
+            .and_then(|v| v.ushort())
+        {
+            pdinfo.bits_stored = val;
+        }
+        if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::HighBit)
+            .and_then(|v| v.ushort())
+        {
+            pdinfo.high_bit = val;
+        }
+        if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::PixelRepresentation)
+            .and_then(|v| v.ushort())
+        {
+            pdinfo.pixel_rep = val;
+        }
+        pdinfo.pixel_pad = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::PixelPaddingValue)
+            .and_then(|v| v.ushort());
+        if let Some(RawValue::Doubles(vals)) =
+            pdinfo.dcmroot().get_value_by_tag(&tags::WindowCenter)
+        {
+            for (i, val) in vals.into_iter().enumerate() {
+                if let Some(winlevel) = pdinfo.win_levels.get_mut(i) {
+                    winlevel.set_center(val);
+                } else {
+                    pdinfo.win_levels.push(WindowLevel::new(
+                        format!("winlevel_{i}"),
+                        val,
+                        0.0f64,
+                        f64::MIN,
+                        f64::MAX,
+                    ));
+                }
+            }
+        }
+        if let Some(RawValue::Doubles(vals)) = pdinfo.dcmroot().get_value_by_tag(&tags::WindowWidth)
+        {
+            for (i, val) in vals.into_iter().enumerate() {
+                if let Some(winlevel) = pdinfo.win_levels.get_mut(i) {
+                    winlevel.set_width(val);
+                } else {
+                    pdinfo.win_levels.push(WindowLevel::new(
+                        format!("winlevel_{i}"),
+                        0.0f64,
+                        val,
+                        f64::MIN,
+                        f64::MAX,
+                    ));
+                }
+            }
+        }
+        pdinfo.intercept = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::RescaleIntercept)
+            .and_then(|v| v.double());
+        pdinfo.slope = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::RescaleSlope)
+            .and_then(|v| v.double());
+        if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::RescaleType)
+            .and_then(|v| v.string().cloned())
+        {
+            pdinfo.unit = val;
+        } else if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::Units)
+            .and_then(|v| v.string().cloned())
+        {
+            pdinfo.unit = val;
+        }
+
+        if let Some(RawValue::Strings(vals)) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::WindowCenter_and_WidthExplanation)
+        {
+            for (i, val) in vals.into_iter().enumerate() {
+                if let Some(winlevel) = pdinfo.win_levels.get_mut(i) {
+                    winlevel.set_name(val);
+                } else {
+                    pdinfo.win_levels.push(WindowLevel::new(
+                        val,
+                        0.0f64,
+                        0.0f64,
+                        f64::MIN,
+                        f64::MAX,
+                    ));
+                }
+            }
+        }
+
+        let mut pd_bytes = Vec::with_capacity(0);
+        let mut vr = &vr::OB;
+        if let Some(obj) = pdinfo.dcmroot_mut().get_child_by_tag_mut(&tags::PixelData) {
+            let elem = obj.element_mut();
+            vr = elem.vr();
+            if elem.has_fragments() {
+                // Otherwise the additional fragments have to be appended. Shrink the element's data
+                // buffer so it's not hanging on to an empty vec with a large capacity.
+                for ch in obj.iter_items_mut() {
+                    pd_bytes.append(ch.element_mut().data_mut());
+                    ch.element_mut().data_mut().shrink_to(0);
+                }
+            } else {
+                // The common case of a single-frame dataset, or the first frame of a multi-frame
+                // datset, swapping results in more efficient memory usage since the bytes do not need
+                // to be individually copied/moved.
+                std::mem::swap(&mut pd_bytes, elem.data_mut());
+            }
+        }
+        pdinfo.vr = vr;
+        pdinfo.pd_bytes = pd_bytes;
+
+        pdinfo
     }
 }
 
@@ -140,6 +315,16 @@ impl PixelDataSliceInfo {
     #[must_use]
     pub fn big_endian(&self) -> bool {
         self.big_endian
+    }
+
+    #[must_use]
+    pub fn dcmroot(&self) -> &DicomRoot {
+        &self.dcmroot
+    }
+
+    #[must_use]
+    pub fn dcmroot_mut(&mut self) -> &mut DicomRoot {
+        &mut self.dcmroot
     }
 
     #[must_use]
@@ -335,156 +520,11 @@ impl PixelDataSliceInfo {
     /// # Errors
     /// - I/O errors parsing values out of DICOM elements.
     pub fn process_dcm_parser<R: Read>(
-        parser: Parser<'_, R>,
+        mut parser: Parser<'_, R>,
     ) -> Result<PixelDataSliceInfo, PixelDataError> {
-        let mut pixdata_info: PixelDataSliceInfo = PixelDataSliceInfo {
-            big_endian: parser.ts().big_endian(),
-            ..Default::default()
+        let Some(dcmroot) = DicomRoot::parse(&mut parser)? else {
+            return Err(PixelDataError::MissingPixelData);
         };
-        for elem in parser {
-            let mut elem = elem?;
-            Self::process_element(&mut pixdata_info, &elem)?;
-            if elem.is_pixel_data() || elem.is_within_pixel_data() {
-                Self::process_pixdata_element(&mut pixdata_info, &mut elem);
-            }
-        }
-        Ok(pixdata_info)
-    }
-
-    /// Process relevant DICOM elements into the `PixelDataInfo` structure.
-    ///
-    /// # Errors
-    /// - I/O errors parsing values out of DICOM elements.
-    fn process_element(
-        pixdata_info: &mut PixelDataSliceInfo,
-        elem: &DicomElement,
-    ) -> Result<(), PixelDataError> {
-        // The order of the tag checks here are the order they will appear in a DICOM protocol.
-        if elem.tag() == tags::SamplesperPixel.tag() {
-            if let Some(val) = elem.parse_value()?.ushort() {
-                pixdata_info.samples_per_pixel = val;
-            }
-        } else if elem.tag() == tags::PhotometricInterpretation.tag() {
-            if let Some(val) = elem.parse_value()?.string() {
-                pixdata_info.photo_interp = Some(Into::<PhotoInterp>::into(val.as_str()));
-            }
-        } else if elem.tag() == tags::PlanarConfiguration.tag() {
-            if let Some(val) = elem.parse_value()?.ushort() {
-                pixdata_info.planar_config = val;
-            }
-        } else if elem.tag() == tags::NumberofFrames.tag() {
-            if let Some(val) = elem.parse_value()?.int() {
-                pixdata_info.num_frames = val;
-            }
-        } else if elem.tag() == tags::Rows.tag() {
-            if let Some(val) = elem.parse_value()?.ushort() {
-                pixdata_info.rows = val;
-            }
-        } else if elem.tag() == tags::Columns.tag() {
-            if let Some(val) = elem.parse_value()?.ushort() {
-                pixdata_info.cols = val;
-            }
-        } else if elem.tag() == tags::BitsAllocated.tag() {
-            if let Some(val) = elem.parse_value()?.ushort() {
-                pixdata_info.bits_alloc = BitsAlloc::from_val(val);
-            }
-        } else if elem.tag() == tags::BitsStored.tag() {
-            if let Some(val) = elem.parse_value()?.ushort() {
-                pixdata_info.bits_stored = val;
-            }
-        } else if elem.tag() == tags::HighBit.tag() {
-            if let Some(val) = elem.parse_value()?.ushort() {
-                pixdata_info.high_bit = val;
-            }
-        } else if elem.tag() == tags::PixelRepresentation.tag() {
-            if let Some(val) = elem.parse_value()?.ushort() {
-                pixdata_info.pixel_rep = val;
-            }
-        } else if elem.tag() == tags::PixelPaddingValue.tag() {
-            if let Some(val) = elem.parse_value()?.ushort() {
-                pixdata_info.pixel_pad = Some(val);
-            }
-        } else if elem.tag() == tags::WindowCenter.tag() {
-            if let RawValue::Doubles(vals) = elem.parse_value()? {
-                for (i, val) in vals.into_iter().enumerate() {
-                    if let Some(winlevel) = pixdata_info.win_levels.get_mut(i) {
-                        winlevel.set_center(val);
-                    } else {
-                        pixdata_info.win_levels.push(WindowLevel::new(
-                            format!("winlevel_{i}"),
-                            val,
-                            0.0f64,
-                            f64::MIN,
-                            f64::MAX,
-                        ));
-                    }
-                }
-            }
-        } else if elem.tag() == tags::WindowWidth.tag() {
-            if let RawValue::Doubles(vals) = elem.parse_value()? {
-                for (i, val) in vals.into_iter().enumerate() {
-                    if let Some(winlevel) = pixdata_info.win_levels.get_mut(i) {
-                        winlevel.set_width(val);
-                    } else {
-                        pixdata_info.win_levels.push(WindowLevel::new(
-                            format!("winlevel_{i}"),
-                            0.0f64,
-                            val,
-                            f64::MIN,
-                            f64::MAX,
-                        ));
-                    }
-                }
-            }
-        } else if elem.tag() == tags::RescaleIntercept.tag() {
-            if let Some(val) = elem.parse_value()?.double() {
-                pixdata_info.intercept = Some(val);
-            }
-        } else if elem.tag() == tags::RescaleSlope.tag() {
-            if let Some(val) = elem.parse_value()?.double() {
-                pixdata_info.slope = Some(val);
-            }
-        } else if elem.tag() == tags::RescaleType.tag() || elem.tag() == tags::Units.tag() {
-            if let Some(val) = elem.parse_value()?.string() {
-                // Only use Units if RescaleType wasn't present. RescaleType occurs prior to Units.
-                if pixdata_info.unit.is_empty() {
-                    val.clone_into(&mut pixdata_info.unit);
-                }
-            }
-        } else if elem.tag() == tags::WindowCenter_and_WidthExplanation.tag() {
-            if let RawValue::Strings(vals) = elem.parse_value()? {
-                for (i, val) in vals.into_iter().enumerate() {
-                    if let Some(winlevel) = pixdata_info.win_levels.get_mut(i) {
-                        winlevel.set_name(val);
-                    } else {
-                        pixdata_info.win_levels.push(WindowLevel::new(
-                            val,
-                            0.0f64,
-                            0.0f64,
-                            f64::MIN,
-                            f64::MAX,
-                        ));
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Process the relevant `PixelData` element/fragments by copying the data/bytes into the
-    /// `PixelDataInfo::pd_bytes` field, replacing the element's data/bytes with an empty vec.
-    fn process_pixdata_element(pixdata_info: &mut PixelDataSliceInfo, elem: &mut DicomElement) {
-        if pixdata_info.pd_bytes.is_empty() {
-            // The common case of a single-frame dataset, or the first frame of a multi-frame
-            // datset, swapping results in more efficient memory usage since the bytes do not need
-            // to be individually copied/moved.
-            std::mem::swap(&mut pixdata_info.pd_bytes, elem.mut_data());
-        } else {
-            // Otherwise the additional fragments have to be appended. Shrink the element's data
-            // buffer so it's not hanging on to an empty vec with a large capacity.
-            pixdata_info.pd_bytes.append(elem.mut_data());
-            elem.mut_data().shrink_to(0);
-        }
+        Ok(PixelDataSliceInfo::new(dcmroot))
     }
 }
