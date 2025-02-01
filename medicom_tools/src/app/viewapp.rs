@@ -111,10 +111,10 @@ impl DicomFileImageLoader {
         }
 
         let pixdata_info = PixelDataSliceInfo::process_dcm_parser(parser)?;
-        let pixdata_buffer = pixdata_info.load_pixel_data()?;
+        let slice_info = pixdata_info.load_pixel_data()?;
         //dbg!(&pixdata_buffer);
 
-        match pixdata_buffer {
+        match slice_info {
             PixelDataSlice::U8(pdslice) => {
                 let width = pdslice.info().rows().into();
                 let height = pdslice.info().cols().into();
@@ -248,6 +248,7 @@ impl ImageViewer {
         } else if input.is_file() {
             image_files.push(input.clone());
         }
+
         // TODO: Sort by position
         let current_image = image_files.len() / 2;
         let loader = Arc::new(DicomFileImageLoader::default());

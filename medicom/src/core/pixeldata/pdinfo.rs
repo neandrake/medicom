@@ -59,6 +59,9 @@ pub struct PixelDataSliceInfo {
     intercept: Option<f64>,
     unit: String,
     win_levels: Vec<WindowLevel>,
+    patient_pos: String,
+    image_pos: [f64; 3],
+    patient_orientation: [f64; 6],
     pd_bytes: Vec<u8>,
 }
 
@@ -84,6 +87,9 @@ impl PixelDataSliceInfo {
             intercept: None,
             unit: String::new(),
             win_levels: Vec::with_capacity(0),
+            patient_pos: String::new(),
+            image_pos: [0f64; 3],
+            patient_orientation: [0f64; 6],
             pd_bytes: Vec::with_capacity(0),
         };
 
@@ -232,6 +238,29 @@ impl PixelDataSliceInfo {
                         f64::MAX,
                     ));
                 }
+            }
+        }
+
+        if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::PatientPosition)
+            .and_then(|v| v.string().cloned())
+        {
+            pdinfo.patient_pos = val;
+        }
+        if let Some(RawValue::Doubles(vals)) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::ImagePositionPatient)
+        {
+            if vals.len() <= pdinfo.image_pos.len() {
+                pdinfo.image_pos[..vals.len()].copy_from_slice(&vals[..]);
+            }
+        }
+        if let Some(RawValue::Doubles(vals)) =
+            pdinfo.dcmroot().get_value_by_tag(&tags::PatientOrientation)
+        {
+            if vals.len() <= pdinfo.patient_orientation.len() {
+                pdinfo.patient_orientation[..vals.len()].copy_from_slice(&vals[..]);
             }
         }
 
