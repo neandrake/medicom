@@ -15,8 +15,9 @@
 */
 
 use crate::core::pixeldata::{
-    pixel_i16::PixelDataSliceI16, pixel_i32::PixelDataSliceI32, pixel_i8::PixelDataSliceI8,
-    pixel_u16::PixelDataSliceU16, pixel_u32::PixelDataSliceU32, pixel_u8::PixelDataSliceU8,
+    pdinfo::PixelDataSliceInfo, pixel_i16::PixelDataSliceI16, pixel_i32::PixelDataSliceI32,
+    pixel_i8::PixelDataSliceI8, pixel_u16::PixelDataSliceU16, pixel_u32::PixelDataSliceU32,
+    pixel_u8::PixelDataSliceU8,
 };
 
 /// Container for the raw pixel values parsed from the DICOM binary data.
@@ -31,6 +32,18 @@ pub enum PixelDataSlice {
 }
 
 impl PixelDataSlice {
+    #[must_use]
+    pub fn info(&self) -> &PixelDataSliceInfo {
+        match self {
+            PixelDataSlice::I8(pds) => pds.info(),
+            PixelDataSlice::U8(pds) => pds.info(),
+            PixelDataSlice::I16(pds) => pds.info(),
+            PixelDataSlice::U16(pds) => pds.info(),
+            PixelDataSlice::I32(pds) => pds.info(),
+            PixelDataSlice::U32(pds) => pds.info(),
+        }
+    }
+
     /// Shift an `i8` value into `u8` space, so `i8::MIN` -> `u8::MIN`.
     #[must_use]
     pub fn shift_i8(val: i8) -> u8 {

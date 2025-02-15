@@ -52,6 +52,10 @@ impl std::fmt::Debug for PixelDataSliceU32 {
 }
 
 impl PixelDataSliceU32 {
+    /// Interpret as 32bit RGB.
+    ///
+    /// # Errors
+    /// - I/O errors reading the data.
     pub fn from_rgb_32bit(mut pdinfo: PixelDataSliceInfo) -> Result<Self, PixelDataError> {
         let num_frames = usize::try_from(pdinfo.num_frames()).unwrap_or(1);
         let samples = usize::from(pdinfo.samples_per_pixel());
@@ -205,24 +209,26 @@ impl PixelDataSliceU32 {
             // XXX: The window/level computed from the min/max values seems to be better than most
             //      window/levels specified in the dicom, at least prior to applying a color-table.
             .last()
-            .map(|winlevel| {
-                WindowLevel::new(
-                    winlevel.name().to_string(),
-                    self.rescale(winlevel.center()),
-                    self.rescale(winlevel.width()),
-                    winlevel.out_min(),
-                    winlevel.out_max(),
-                )
-            })
-            .unwrap_or_else(|| {
-                WindowLevel::new(
-                    "Default".to_string(),
-                    f64::from(u32::MAX) / 2_f64,
-                    f64::from(u32::MAX) / 2_f64,
-                    f64::from(i32::MIN),
-                    f64::from(i32::MAX),
-                )
-            });
+            .map_or_else(
+                || {
+                    WindowLevel::new(
+                        "Default".to_string(),
+                        f64::from(u32::MAX) / 2_f64,
+                        f64::from(u32::MAX) / 2_f64,
+                        f64::from(i32::MIN),
+                        f64::from(i32::MAX),
+                    )
+                },
+                |winlevel| {
+                    WindowLevel::new(
+                        winlevel.name().to_string(),
+                        self.rescale(winlevel.center()),
+                        self.rescale(winlevel.width()),
+                        winlevel.out_min(),
+                        winlevel.out_max(),
+                    )
+                },
+            );
 
         self.pixel_iter_with_win(winlevel)
     }

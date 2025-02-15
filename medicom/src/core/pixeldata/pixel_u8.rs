@@ -167,24 +167,26 @@ impl PixelDataSliceU8 {
             // XXX: The window/level computed from the min/max values seems to be better than most
             //      window/levels specified in the dicom, at least prior to applying a color-table.
             .last()
-            .map(|winlevel| {
-                WindowLevel::new(
-                    winlevel.name().to_string(),
-                    self.rescale(winlevel.center()),
-                    self.rescale(winlevel.width()),
-                    winlevel.out_min(),
-                    winlevel.out_max(),
-                )
-            })
-            .unwrap_or_else(|| {
-                WindowLevel::new(
-                    "Default".to_string(),
-                    f64::from(u8::MAX) / 2_f64,
-                    f64::from(u8::MAX) / 2_f64,
-                    f64::from(u8::MIN),
-                    f64::from(u8::MAX),
-                )
-            });
+            .map_or_else(
+                || {
+                    WindowLevel::new(
+                        "Default".to_string(),
+                        f64::from(u8::MAX) / 2_f64,
+                        f64::from(u8::MAX) / 2_f64,
+                        f64::from(u8::MIN),
+                        f64::from(u8::MAX),
+                    )
+                },
+                |winlevel| {
+                    WindowLevel::new(
+                        winlevel.name().to_string(),
+                        self.rescale(winlevel.center()),
+                        self.rescale(winlevel.width()),
+                        winlevel.out_min(),
+                        winlevel.out_max(),
+                    )
+                },
+            );
 
         self.pixel_iter_with_win(winlevel)
     }

@@ -27,6 +27,7 @@ use medicom::core::pixeldata::{
     pdinfo::PixelDataSliceInfo, pdslice::PixelDataSlice, pdwinlevel::WindowLevel,
 };
 use std::{
+    cmp::Ordering,
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
@@ -51,7 +52,7 @@ impl ViewApp {
 
 impl CommandApplication for ViewApp {
     fn run(&mut self) -> Result<()> {
-        ImageViewer::open_viewer(self.args.input.clone())
+        ImageViewer::open_viewer(&self.args.input)
     }
 }
 
@@ -84,20 +85,47 @@ impl From<&PathBuf> for DicomUri {
     }
 }
 
+struct LoadedSlice {
+    file: PathBuf,
+    slice_info: PixelDataSlice,
+    image: Arc<ColorImage>,
+}
+
 #[derive(Default)]
 struct DicomFileImageLoader {
-    cache: Mutex<HashMap<DicomUri, Arc<ColorImage>>>,
+    cache: Mutex<HashMap<DicomUri, LoadedSlice>>,
     failed: Mutex<HashSet<DicomUri>>,
 }
 
 impl DicomFileImageLoader {
-    fn load_files(&self, files: &Vec<PathBuf>) {
-        for file in files {
+    fn load_files(&self, files: &Arc<Mutex<Vec<PathBuf>>>) {
+        let mut files = files.lock();
+        for file in files.iter() {
             if let Err(e) = self.load_dicom_file(file) {
                 self.failed.lock().insert(DicomUri::from(file));
                 eprintln!("Failed to load: {e:?}");
             }
         }
+
+        let mut slices: Vec<&LoadedSlice> = Vec::with_capacity(files.len());
+        let cache = self.cache.lock();
+        for slice in cache.values() {
+            slices.push(slice);
+        }
+        slices.sort_by(|a, b| {
+            let a_pos = a.slice_info.info().image_pos()[2];
+            let b_pos = b.slice_info.info().image_pos()[2];
+            if a_pos < b_pos {
+                Ordering::Less
+            } else if a_pos > b_pos {
+                Ordering::Greater
+            } else {
+                Ordering::Equal
+            }
+        });
+
+        files.clear();
+        files.extend(slices.iter().map(|s| s.file.clone()));
     }
 
     fn load_dicom_file(&self, file: &Path) -> Result<()> {
@@ -119,14 +147,17 @@ impl DicomFileImageLoader {
                 let width = pdslice.info().rows().into();
                 let height = pdslice.info().cols().into();
                 let image = ColorImage::from_rgb([width, height], pdslice.buffer());
-                self.cache
-                    .lock()
-                    .insert(DicomUri::from(file), Arc::new(image));
+                let entry = LoadedSlice {
+                    file: file.to_path_buf(),
+                    slice_info: PixelDataSlice::U8(pdslice),
+                    image: Arc::new(image),
+                };
+                self.cache.lock().insert(DicomUri::from(file), entry);
             }
             PixelDataSlice::U16(pdslice) => {
                 // WindowLevel to map i16 values into u8.
                 let win = WindowLevel::new(
-                    "".to_string(),
+                    String::new(),
                     f64::from(i16::MAX) / 2_f64,
                     f64::from(i16::MAX),
                     f64::from(u8::MIN),
@@ -137,17 +168,26 @@ impl DicomFileImageLoader {
 
                 let iter = pdslice.pixel_iter_with_win(win).map(|p| p.r as u8);
                 let image = ColorImage::from_gray_iter([width, height], iter);
-                self.cache
-                    .lock()
-                    .insert(DicomUri::from(file), Arc::new(image));
+                let entry = LoadedSlice {
+                    file: file.to_path_buf(),
+                    slice_info: PixelDataSlice::U16(pdslice),
+                    image: Arc::new(image),
+                };
+                self.cache.lock().insert(DicomUri::from(file), entry);
             }
             PixelDataSlice::I16(pdslice) => {
                 // WindowLevel to map i16 values into u8.
-                let win = pdslice
-                    .info()
-                    .win_levels()
-                    .last()
-                    .map(|w| {
+                let win = pdslice.info().win_levels().last().map_or_else(
+                    || {
+                        WindowLevel::new(
+                            String::new(),
+                            0_f64,
+                            f64::from(i16::MAX),
+                            f64::from(u8::MIN),
+                            f64::from(u8::MAX),
+                        )
+                    },
+                    |w| {
                         WindowLevel::new(
                             w.name().to_string(),
                             pdslice.rescale(w.center()),
@@ -155,24 +195,19 @@ impl DicomFileImageLoader {
                             f64::from(u8::MIN),
                             f64::from(u8::MAX),
                         )
-                    })
-                    .unwrap_or_else(|| {
-                        WindowLevel::new(
-                            "".to_string(),
-                            0_f64,
-                            f64::from(i16::MAX),
-                            f64::from(u8::MIN),
-                            f64::from(u8::MAX),
-                        )
-                    });
+                    },
+                );
                 let width = pdslice.info().rows().into();
                 let height = pdslice.info().cols().into();
 
                 let iter = pdslice.pixel_iter_with_win(win).map(|p| p.r as u8);
                 let image = ColorImage::from_gray_iter([width, height], iter);
-                self.cache
-                    .lock()
-                    .insert(DicomUri::from(file), Arc::new(image));
+                let entry = LoadedSlice {
+                    file: file.to_path_buf(),
+                    slice_info: PixelDataSlice::I16(pdslice),
+                    image: Arc::new(image),
+                };
+                self.cache.lock().insert(DicomUri::from(file), entry);
             }
             other => {
                 return Err(anyhow!("Unsupported PixelData: {other:?}"));
@@ -192,15 +227,15 @@ impl DicomFileImageLoader {
 }
 
 impl ImageLoader for DicomFileImageLoader {
-    fn id(&self) -> &str {
+    fn id(&self) -> &'static str {
         generate_loader_id!(DicomFileImageLoader)
     }
 
     fn load(&self, _ctx: &egui::Context, uri: &str, _: SizeHint) -> egui::load::ImageLoadResult {
         let cache = self.cache.lock();
-        if let Some(image) = cache.get(&DicomUri::from(uri)) {
+        if let Some(loaded_slice) = cache.get(&DicomUri::from(uri)) {
             Ok(ImagePoll::Ready {
-                image: image.clone(),
+                image: loaded_slice.image.clone(),
             })
         } else {
             // Must release the lock used to check the cache before it can be used in
@@ -225,19 +260,19 @@ impl ImageLoader for DicomFileImageLoader {
         self.cache
             .lock()
             .values()
-            .map(|image| image.as_raw().len())
+            .map(|slice| slice.image.as_raw().len())
             .sum()
     }
 }
 
 struct ImageViewer {
-    image_files: Vec<PathBuf>,
+    image_files: Arc<Mutex<Vec<PathBuf>>>,
     current_image: usize,
     image_loader: Arc<DicomFileImageLoader>,
 }
 
 impl ImageViewer {
-    fn new(input: PathBuf, cc: &eframe::CreationContext<'_>) -> Result<Self> {
+    fn new(input: &Path, cc: &eframe::CreationContext<'_>) -> Result<Self> {
         let mut image_files = Vec::new();
         if input.is_dir() {
             let files = input.read_dir()?;
@@ -246,15 +281,16 @@ impl ImageViewer {
                 image_files.push(file);
             }
         } else if input.is_file() {
-            image_files.push(input.clone());
+            image_files.push(input.to_path_buf());
         }
 
         // TODO: Sort by position
         let current_image = image_files.len() / 2;
         let loader = Arc::new(DicomFileImageLoader::default());
 
-        let loader_for_loading = loader.clone();
+        let image_files = Arc::new(Mutex::new(image_files));
         let image_files_for_loading = image_files.clone();
+        let loader_for_loading = loader.clone();
         thread::spawn(move || {
             loader_for_loading.load_files(&image_files_for_loading);
         });
@@ -268,7 +304,7 @@ impl ImageViewer {
         })
     }
 
-    fn open_viewer(input: PathBuf) -> Result<()> {
+    fn open_viewer(input: &Path) -> Result<()> {
         let native_options = eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size([1024.0, 768.0])
@@ -285,21 +321,24 @@ impl ImageViewer {
         Ok(())
     }
 
-    fn create_progress(&mut self) -> egui::ProgressBar {
-        self.image_files
-            .retain(|f| !self.image_loader.is_failed(&DicomUri::from(f)));
+    fn create_progress(
+        image_files: &mut Vec<PathBuf>,
+        image_loader: &Arc<DicomFileImageLoader>,
+    ) -> egui::ProgressBar {
+        // Remove non-DICOM files from the list, and do not count for progress.
+        image_files.retain(|f| !image_loader.is_failed(&DicomUri::from(f)));
         let mut loaded_count = 0_f32;
-        for file in &self.image_files {
-            if self.image_loader.is_loaded(&DicomUri::from(file)) {
+        for file in image_files.iter() {
+            if image_loader.is_loaded(&DicomUri::from(file)) {
                 loaded_count += 1_f32;
             }
         }
-        let progress = loaded_count / self.image_files.len() as f32;
+        let progress = loaded_count / image_files.len() as f32;
         if progress < 1_f32 {
             let progress_text = format!(
                 "Loading images {}/{}...",
                 loaded_count as usize,
-                self.image_files.len()
+                image_files.len()
             );
             egui::ProgressBar::new(progress)
                 .animate(true)
@@ -331,18 +370,22 @@ impl eframe::App for ImageViewer {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.spacing_mut().window_margin = Margin::same(5.0);
 
-            ui.add(self.create_progress());
+            let mut image_files = self.image_files.lock();
+            let image_loader = self.image_loader.clone();
+            ui.add(ImageViewer::create_progress(
+                &mut image_files,
+                &image_loader,
+            ));
             if ui.input(|i| i.key_pressed(egui::Key::ArrowUp) || i.key_down(egui::Key::K)) {
                 if self.current_image > 0 {
                     self.current_image -= 1;
                 }
             } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown) || i.key_down(egui::Key::J))
-                && self.current_image != self.image_files.len() - 1
+                && self.current_image != image_files.len() - 1
             {
                 self.current_image += 1;
             }
-            let cur_image_uri =
-                format!("dicom://{}", self.image_files[self.current_image].display());
+            let cur_image_uri = format!("dicom://{}", image_files[self.current_image].display());
             ui.add(egui::Image::from_uri(cur_image_uri));
         });
     }

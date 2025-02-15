@@ -66,6 +66,10 @@ pub struct PixelDataSliceInfo {
 }
 
 impl PixelDataSliceInfo {
+    pub fn image_pos(&self) -> &[f64; 3] {
+        &self.image_pos
+    }
+
     fn new(dcmroot: DicomRoot) -> Self {
         let big_endian = dcmroot.ts().big_endian();
         let mut pdinfo = Self {
@@ -310,10 +314,7 @@ impl std::fmt::Debug for PixelDataSliceInfo {
             .field("rows", &self.rows)
             .field(
                 "pixel_pad",
-                &self
-                    .pixel_pad
-                    .map(|v| v.to_string())
-                    .unwrap_or("None".to_string()),
+                &self.pixel_pad.map_or("None".to_string(), |v| v.to_string()),
             )
             .field("bits_alloc", &self.bits_alloc)
             .field("bits_stored", &self.bits_stored)
@@ -321,17 +322,11 @@ impl std::fmt::Debug for PixelDataSliceInfo {
             .field("pixel_rep", &self.pixel_rep)
             .field(
                 "slope",
-                &self
-                    .slope
-                    .map(|v| v.to_string())
-                    .unwrap_or("None".to_string()),
+                &self.slope.map_or("None".to_string(), |v| v.to_string()),
             )
             .field(
                 "intercept",
-                &self
-                    .intercept
-                    .map(|v| v.to_string())
-                    .unwrap_or("None".to_string()),
+                &self.intercept.map_or("None".to_string(), |v| v.to_string()),
             )
             .field("unit", &self.unit)
             .field("win_levels", &self.win_levels)

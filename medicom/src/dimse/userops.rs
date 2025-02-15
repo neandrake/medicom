@@ -195,10 +195,7 @@ impl FindUserOp {
         let mut buf = Vec::<u8>::with_capacity(self.max_pdu_rcv_size);
         loop {
             let next_msg = CommonAssoc::next_msg(&mut reader, &mut writer, self.max_pdu_rcv_size);
-            let dimse_msg = match next_msg {
-                Ok(dimse_msg) => dimse_msg,
-                Err(e) => return Err(e),
-            };
+            let dimse_msg = next_msg?;
             match dimse_msg {
                 DimseMsg::Dataset(pdv) => {
                     let is_last = pdv.is_last_fragment();

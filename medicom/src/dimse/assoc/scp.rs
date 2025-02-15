@@ -91,15 +91,8 @@ impl ServiceAssoc {
                 )),
             });
 
-        let rq = match rq {
-            Ok(rq) => rq,
-            Err(e) => return Err(e),
-        };
-
-        let (assoc_ac, agreed_abs) = match self.validate_assoc_rq(&rq) {
-            Ok(rq) => rq,
-            Err(e) => return Err(e),
-        };
+        let rq = rq?;
+        let (assoc_ac, agreed_abs) = self.validate_assoc_rq(&rq)?;
 
         for pres_ctx in assoc_ac.pres_ctxs() {
             if pres_ctx.is_accepted() {

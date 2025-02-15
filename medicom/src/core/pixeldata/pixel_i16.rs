@@ -88,7 +88,9 @@ impl PixelDataSliceI16 {
             winlevel.set_out_min(f64::from(i16::MIN));
             winlevel.set_out_max(f64::from(i16::MAX));
 
-            if winlevel.center() == minmax_center && winlevel.width() == minmax_width {
+            let same_width = (winlevel.width() - minmax_width).abs() < 0.01;
+            let same_center = (winlevel.center() - minmax_center).abs() < 0.01;
+            if same_width && same_center {
                 already_has_minmax = true;
             }
         }
@@ -159,7 +161,9 @@ impl PixelDataSliceI16 {
             winlevel.set_out_min(f64::from(i16::MIN));
             winlevel.set_out_max(f64::from(i16::MAX));
 
-            if winlevel.center() == minmax_center && winlevel.width() == minmax_width {
+            let same_width = (winlevel.width() - minmax_width).abs() < 0.01;
+            let same_center = (winlevel.center() - minmax_center).abs() < 0.01;
+            if same_width && same_center {
                 already_has_minmax = true;
             }
         }
@@ -289,24 +293,26 @@ impl PixelDataSliceI16 {
             // XXX: The window/level computed from the min/max values seems to be better than most
             //      window/levels specified in the dicom, at least prior to applying a color-table.
             .last()
-            .map(|winlevel| {
-                WindowLevel::new(
-                    winlevel.name().to_string(),
-                    self.rescale(winlevel.center()),
-                    self.rescale(winlevel.width()),
-                    winlevel.out_min(),
-                    winlevel.out_max(),
-                )
-            })
-            .unwrap_or_else(|| {
-                WindowLevel::new(
-                    "Default".to_string(),
-                    0_f64,
-                    f64::from(i16::MAX),
-                    f64::from(i16::MIN),
-                    f64::from(i16::MAX),
-                )
-            });
+            .map_or_else(
+                || {
+                    WindowLevel::new(
+                        "Default".to_string(),
+                        0_f64,
+                        f64::from(i16::MAX),
+                        f64::from(i16::MIN),
+                        f64::from(i16::MAX),
+                    )
+                },
+                |winlevel| {
+                    WindowLevel::new(
+                        winlevel.name().to_string(),
+                        self.rescale(winlevel.center()),
+                        self.rescale(winlevel.width()),
+                        winlevel.out_min(),
+                        winlevel.out_max(),
+                    )
+                },
+            );
 
         self.pixel_iter_with_win(winlevel)
     }

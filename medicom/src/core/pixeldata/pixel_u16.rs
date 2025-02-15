@@ -52,6 +52,10 @@ impl std::fmt::Debug for PixelDataSliceU16 {
 }
 
 impl PixelDataSliceU16 {
+    /// Interpret as 16-bit RGB.
+    ///
+    /// # Errors
+    /// - I/O errors reading the data.
     pub fn from_rgb_16bit(mut pdinfo: PixelDataSliceInfo) -> Result<Self, PixelDataError> {
         let num_frames = usize::try_from(pdinfo.num_frames()).unwrap_or(1);
         let samples = usize::from(pdinfo.samples_per_pixel());
@@ -71,9 +75,7 @@ impl PixelDataSliceU16 {
                         in_pos += I16_SIZE;
                         val
                     } else {
-                        let val = u16::from_be_bytes(
-                            bytes[in_pos..in_pos + U16_SIZE].try_into()?,
-                        );
+                        let val = u16::from_be_bytes(bytes[in_pos..in_pos + U16_SIZE].try_into()?);
                         in_pos += U16_SIZE;
                         val
                     }
@@ -85,8 +87,7 @@ impl PixelDataSliceU16 {
                     in_pos += I16_SIZE;
                     val
                 } else {
-                    let val =
-                        u16::from_le_bytes(bytes[in_pos..in_pos + U16_SIZE].try_into()?);
+                    let val = u16::from_le_bytes(bytes[in_pos..in_pos + U16_SIZE].try_into()?);
                     in_pos += U16_SIZE;
                     val
                 };
@@ -150,7 +151,13 @@ impl PixelDataSliceU16 {
     /// - If the x,y coordinate is invalid, either by being outside the image dimensions, or if the
     ///   Planar Configuration and Samples per Pixel are set up such that beginning of RGB values
     ///   must occur at specific indices.
-    pub fn get_pixel(&self, x: usize, y: usize, z: usize, winlevel: &WindowLevel) -> Result<PixelU16, PixelDataError> {
+    pub fn get_pixel(
+        &self,
+        x: usize,
+        y: usize,
+        z: usize,
+        winlevel: &WindowLevel,
+    ) -> Result<PixelU16, PixelDataError> {
         let cols = usize::from(self.info().cols());
         let rows = usize::from(self.info().rows());
         let samples = usize::from(self.info().samples_per_pixel());
@@ -202,24 +209,26 @@ impl PixelDataSliceU16 {
             // XXX: The window/level computed from the min/max values seems to be better than most
             //      window/levels specified in the dicom, at least prior to applying a color-table.
             .last()
-            .map(|winlevel| {
-                WindowLevel::new(
-                    winlevel.name().to_string(),
-                    self.rescale(winlevel.center()),
-                    self.rescale(winlevel.width()),
-                    winlevel.out_min(),
-                    winlevel.out_max(),
-                )
-            })
-            .unwrap_or_else(|| {
-                WindowLevel::new(
-                    "Default".to_string(),
-                    f64::from(u16::MAX) / 2_f64,
-                    f64::from(u16::MAX) / 2_f64,
-                    f64::from(u16::MIN),
-                    f64::from(u16::MAX),
-                )
-            });
+            .map_or_else(
+                || {
+                    WindowLevel::new(
+                        "Default".to_string(),
+                        f64::from(u16::MAX) / 2_f64,
+                        f64::from(u16::MAX) / 2_f64,
+                        f64::from(u16::MIN),
+                        f64::from(u16::MAX),
+                    )
+                },
+                |winlevel| {
+                    WindowLevel::new(
+                        winlevel.name().to_string(),
+                        self.rescale(winlevel.center()),
+                        self.rescale(winlevel.width()),
+                        winlevel.out_min(),
+                        winlevel.out_max(),
+                    )
+                },
+            );
 
         self.pixel_iter_with_win(winlevel)
     }
