@@ -368,7 +368,7 @@ impl eframe::App for ImageViewer {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.spacing_mut().window_margin = Margin::same(5.0);
+            ui.spacing_mut().window_margin = Margin::same(5);
 
             let mut image_files = self.image_files.lock();
             let image_loader = self.image_loader.clone();
