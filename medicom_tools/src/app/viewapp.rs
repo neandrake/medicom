@@ -99,20 +99,33 @@ struct DicomFileImageLoader {
 
 impl DicomFileImageLoader {
     fn load_files(&self, files: &Arc<Mutex<Vec<PathBuf>>>) {
-        let mut files = files.lock();
-        for file in files.iter() {
+        // Create a copy of the files list so the files list lock does not need to be held while
+        // every file is loaded.
+        let files_copy: Vec<PathBuf>;
+        {
+            let guard = files.lock();
+            files_copy = guard.iter().cloned().collect();
+            drop(guard);
+        }
+
+        // Load all files.
+        for file in &files_copy {
             if let Err(e) = self.load_dicom_file(file) {
                 self.failed.lock().insert(DicomUri::from(file));
                 eprintln!("Failed to load: {e:?}");
             }
         }
 
-        let mut slices: Vec<&LoadedSlice> = Vec::with_capacity(files.len());
+        // Create a sorted list of the slices and map back to their files, resulting in sorting the
+        // files by image position.
+        let mut slices: Vec<&LoadedSlice> = Vec::with_capacity(files_copy.len());
         let cache = self.cache.lock();
         for slice in cache.values() {
             slices.push(slice);
         }
         slices.sort_by(|a, b| {
+            // The X and Y of image position are likely to be the same, unless it's something like
+            // a spinal MR acquisition.
             let a_pos = a.slice_info.info().image_pos()[2];
             let b_pos = b.slice_info.info().image_pos()[2];
             if a_pos < b_pos {
@@ -124,6 +137,8 @@ impl DicomFileImageLoader {
             }
         });
 
+        // Clear the input files list populate from the files sorted by position.
+        let mut files = files.lock();
         files.clear();
         files.extend(slices.iter().map(|s| s.file.clone()));
     }
@@ -284,10 +299,14 @@ impl ImageViewer {
             image_files.push(input.to_path_buf());
         }
 
-        // TODO: Sort by position
+        // Start the current image as the middle index. Note that at this point the files list is
+        // not sorted at all.
         let current_image = image_files.len() / 2;
         let loader = Arc::new(DicomFileImageLoader::default());
 
+        // Create one list of the files, shared to the thread which will load all the images in the
+        // background. After loading it modifies the input list of files to be sorted based on the
+        // image position.
         let image_files = Arc::new(Mutex::new(image_files));
         let image_files_for_loading = image_files.clone();
         let loader_for_loading = loader.clone();
@@ -370,12 +389,23 @@ impl eframe::App for ImageViewer {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.spacing_mut().window_margin = Margin::same(5);
 
-            let mut image_files = self.image_files.lock();
+            // Create a copy of the list so as to not hold the lock for this entire render
+            // duration.
+            let mut image_files;
+            {
+                let lock = self.image_files.lock();
+                image_files = lock.clone();
+                drop(lock);
+            }
+
+            // The loader is used to filter out files that failed parsing.
             let image_loader = self.image_loader.clone();
             ui.add(ImageViewer::create_progress(
                 &mut image_files,
                 &image_loader,
             ));
+
+            // Modify the image index for iterating.
             if ui.input(|i| i.key_pressed(egui::Key::ArrowUp) || i.key_down(egui::Key::K)) {
                 if self.current_image > 0 {
                     self.current_image -= 1;
@@ -385,6 +415,8 @@ impl eframe::App for ImageViewer {
             {
                 self.current_image += 1;
             }
+
+            // Render the current image.
             let cur_image_uri = format!("dicom://{}", image_files[self.current_image].display());
             ui.add(egui::Image::from_uri(cur_image_uri));
         });
