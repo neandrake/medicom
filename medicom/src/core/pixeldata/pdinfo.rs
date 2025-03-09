@@ -58,6 +58,8 @@ pub struct PixelDataSliceInfo {
     slope: Option<f64>,
     intercept: Option<f64>,
     unit: String,
+    min_val: f64,
+    max_val: f64,
     win_levels: Vec<WindowLevel>,
     patient_pos: String,
     image_pos: [f64; 3],
@@ -90,6 +92,8 @@ impl PixelDataSliceInfo {
             slope: None,
             intercept: None,
             unit: String::new(),
+            min_val: 0f64,
+            max_val: 0f64,
             win_levels: Vec::with_capacity(0),
             patient_pos: String::new(),
             image_pos: [0f64; 3],
@@ -424,6 +428,24 @@ impl PixelDataSliceInfo {
     #[must_use]
     pub fn unit(&self) -> &str {
         &self.unit
+    }
+
+    #[must_use]
+    pub fn min_val(&self) -> f64 {
+        self.min_val
+    }
+
+    #[must_use]
+    pub fn max_val(&self) -> f64 {
+        self.max_val
+    }
+
+    pub fn set_min_val(&mut self, min_val: f64) {
+        self.min_val = min_val;
+    }
+
+    pub fn set_max_val(&mut self, max_val: f64) {
+        self.max_val = max_val;
     }
 
     #[must_use]

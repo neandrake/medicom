@@ -154,6 +154,9 @@ impl PixelDataSliceI16 {
             }
         }
 
+        pdinfo.set_min_val(min.into());
+        pdinfo.set_max_val(max.into());
+
         let minmax_center = (f64::from(max) - f64::from(min)) / 2_f64;
         let minmax_width = f64::from(max) - f64::from(min);
         let mut already_has_minmax = false;
