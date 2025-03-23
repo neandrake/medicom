@@ -14,32 +14,32 @@
    limitations under the License.
 */
 
-use crate::core::pixeldata::{
+use crate::load::pixeldata::{
     pdinfo::PixelDataSliceInfo, pdwinlevel::WindowLevel, PhotoInterp, PixelDataError,
 };
 
 #[derive(Debug)]
-pub struct PixelI8 {
+pub struct PixelU8 {
     pub x: usize,
     pub y: usize,
     pub z: usize,
-    pub r: i8,
-    pub g: i8,
-    pub b: i8,
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
 }
 
-pub struct PixelDataSliceI8 {
+pub struct PixelDataSliceU8 {
     info: PixelDataSliceInfo,
-    buffer: Vec<i8>,
+    buffer: Vec<u8>,
 
     stride: usize,
     interp_as_rgb: bool,
 }
 
-impl std::fmt::Debug for PixelDataSliceI8 {
+impl std::fmt::Debug for PixelDataSliceU8 {
     // Default Debug implementation but don't print all bytes, just the length.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PixelDataSliceI8")
+        f.debug_struct("PixelDataSliceU8")
             .field("info", &self.info)
             .field("buffer.len", &self.buffer.len())
             .field("stride", &self.stride)
@@ -48,9 +48,15 @@ impl std::fmt::Debug for PixelDataSliceI8 {
     }
 }
 
-impl PixelDataSliceI8 {
+impl PixelDataSliceU8 {
     #[must_use]
-    pub fn new(info: PixelDataSliceInfo, buffer: Vec<i8>) -> Self {
+    pub fn from_rgb_8bit(mut pdinfo: PixelDataSliceInfo) -> Self {
+        let buffer = pdinfo.take_bytes();
+        PixelDataSliceU8::new(pdinfo, buffer)
+    }
+
+    #[must_use]
+    pub fn new(info: PixelDataSliceInfo, buffer: Vec<u8>) -> Self {
         let stride = if info.planar_config() == 0 {
             1
         } else {
@@ -73,12 +79,12 @@ impl PixelDataSliceI8 {
     }
 
     #[must_use]
-    pub fn buffer(&self) -> &[i8] {
+    pub fn buffer(&self) -> &[u8] {
         &self.buffer
     }
 
     #[must_use]
-    pub fn into_buffer(self) -> Vec<i8> {
+    pub fn into_buffer(self) -> Vec<u8> {
         self.buffer
     }
 
@@ -109,7 +115,7 @@ impl PixelDataSliceI8 {
         y: usize,
         z: usize,
         winlevel: &WindowLevel,
-    ) -> Result<PixelI8, PixelDataError> {
+    ) -> Result<PixelU8, PixelDataError> {
         let cols = usize::from(self.info().cols());
         let rows = usize::from(self.info().rows());
         let samples = usize::from(self.info().samples_per_pixel());
@@ -135,8 +141,8 @@ impl PixelDataSliceI8 {
                 .copied()
                 .map(f64::from)
                 .map(|v| self.rescale(v))
-                .map(|v| winlevel.apply(v) as i8)
-                .or(self.info().pixel_pad().map(|v| v as i8))
+                .map(|v| winlevel.apply(v) as u8)
+                .or(self.info().pixel_pad().map(|v| v as u8))
                 .unwrap_or_default();
             let val = if self
                 .info()
@@ -150,11 +156,11 @@ impl PixelDataSliceI8 {
             (val, val, val)
         };
 
-        Ok(PixelI8 { x, y, z, r, g, b })
+        Ok(PixelU8 { x, y, z, r, g, b })
     }
 
     #[must_use]
-    pub fn pixel_iter(&self) -> SlicePixelI8Iter {
+    pub fn pixel_iter(&self) -> SlicePixelU8Iter {
         let winlevel = self
             .info()
             .win_levels()
@@ -165,10 +171,10 @@ impl PixelDataSliceI8 {
                 || {
                     WindowLevel::new(
                         "Default".to_string(),
-                        0_f64,
-                        f64::from(i8::MAX),
-                        f64::from(i8::MIN),
-                        f64::from(i8::MAX),
+                        f64::from(u8::MAX) / 2_f64,
+                        f64::from(u8::MAX) / 2_f64,
+                        f64::from(u8::MIN),
+                        f64::from(u8::MAX),
                     )
                 },
                 |winlevel| {
@@ -186,8 +192,8 @@ impl PixelDataSliceI8 {
     }
 
     #[must_use]
-    pub fn pixel_iter_with_win(&self, winlevel: WindowLevel) -> SlicePixelI8Iter {
-        SlicePixelI8Iter {
+    pub fn pixel_iter_with_win(&self, winlevel: WindowLevel) -> SlicePixelU8Iter {
+        SlicePixelU8Iter {
             slice: self,
             winlevel,
             src_byte_index: 0,
@@ -195,14 +201,14 @@ impl PixelDataSliceI8 {
     }
 }
 
-pub struct SlicePixelI8Iter<'buf> {
-    slice: &'buf PixelDataSliceI8,
+pub struct SlicePixelU8Iter<'buf> {
+    slice: &'buf PixelDataSliceU8,
     winlevel: WindowLevel,
     src_byte_index: usize,
 }
 
-impl Iterator for SlicePixelI8Iter<'_> {
-    type Item = PixelI8;
+impl Iterator for SlicePixelU8Iter<'_> {
+    type Item = PixelU8;
 
     fn next(&mut self) -> Option<Self::Item> {
         let cols = usize::from(self.slice.info().cols());

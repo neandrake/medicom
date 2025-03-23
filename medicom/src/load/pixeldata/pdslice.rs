@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-use crate::core::pixeldata::{
+use crate::load::pixeldata::{
     pdinfo::PixelDataSliceInfo, pixel_i16::PixelDataSliceI16, pixel_i32::PixelDataSliceI32,
     pixel_i8::PixelDataSliceI8, pixel_u16::PixelDataSliceU16, pixel_u32::PixelDataSliceU32,
     pixel_u8::PixelDataSliceU8,
@@ -65,7 +65,7 @@ impl PixelDataSlice {
 
 #[cfg(test)]
 mod tests {
-    use crate::core::pixeldata::pdslice::PixelDataSlice;
+    use crate::load::pixeldata::pdslice::PixelDataSlice;
 
     #[test]
     pub fn test_shift_i8() {

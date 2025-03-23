@@ -21,3 +21,6 @@ pub mod dimse;
 
 #[cfg(feature = "stddicom")]
 pub mod dict;
+
+#[cfg(feature = "stddicom")]
+pub mod load;

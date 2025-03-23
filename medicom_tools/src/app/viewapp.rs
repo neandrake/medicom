@@ -23,7 +23,7 @@ use egui::{
     mutex::Mutex,
     ColorImage, Margin, SizeHint,
 };
-use medicom::core::pixeldata::{
+use medicom::load::pixeldata::{
     pdinfo::PixelDataSliceInfo, pdslice::PixelDataSlice, pdwinlevel::WindowLevel,
 };
 use std::{

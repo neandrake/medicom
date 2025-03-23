@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-use crate::core::pixeldata::{
+use crate::load::pixeldata::{
     pdinfo::{PixelDataSliceInfo, I16_SIZE, I8_SIZE, U16_SIZE},
     pdwinlevel::WindowLevel,
     PhotoInterp, PixelDataError,

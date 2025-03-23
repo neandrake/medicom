@@ -20,16 +20,15 @@ use crate::{
     core::{
         dcmobject::DicomRoot,
         defn::vr::{self, VRRef},
-        pixeldata::{
-            pdslice::PixelDataSlice, pdwinlevel::WindowLevel, pixel_i16::PixelDataSliceI16,
-            pixel_i32::PixelDataSliceI32, pixel_u16::PixelDataSliceU16,
-            pixel_u32::PixelDataSliceU32, pixel_u8::PixelDataSliceU8, BitsAlloc, PhotoInterp,
-            PixelDataError,
-        },
         read::Parser,
         values::RawValue,
     },
     dict::tags,
+    load::pixeldata::{
+        pdslice::PixelDataSlice, pdwinlevel::WindowLevel, pixel_i16::PixelDataSliceI16,
+        pixel_i32::PixelDataSliceI32, pixel_u16::PixelDataSliceU16, pixel_u32::PixelDataSliceU32,
+        pixel_u8::PixelDataSliceU8, BitsAlloc, PhotoInterp, PixelDataError,
+    },
 };
 
 pub const I8_SIZE: usize = size_of::<i8>();

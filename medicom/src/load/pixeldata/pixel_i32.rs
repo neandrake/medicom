@@ -14,35 +14,34 @@
    limitations under the License.
 */
 
-use crate::core::pixeldata::{
-    pdinfo::{PixelDataSliceInfo, I16_SIZE, U16_SIZE},
-    pdslice::PixelDataSlice,
+use crate::load::pixeldata::{
+    pdinfo::{PixelDataSliceInfo, I32_SIZE, U32_SIZE},
     pdwinlevel::WindowLevel,
     PhotoInterp, PixelDataError,
 };
 
 #[derive(Debug)]
-pub struct PixelU16 {
+pub struct PixelI32 {
     pub x: usize,
     pub y: usize,
     pub z: usize,
-    pub r: u16,
-    pub g: u16,
-    pub b: u16,
+    pub r: i32,
+    pub g: i32,
+    pub b: i32,
 }
 
-pub struct PixelDataSliceU16 {
+pub struct PixelDataSliceI32 {
     info: PixelDataSliceInfo,
-    buffer: Vec<u16>,
+    buffer: Vec<i32>,
 
     stride: usize,
     interp_as_rgb: bool,
 }
 
-impl std::fmt::Debug for PixelDataSliceU16 {
+impl std::fmt::Debug for PixelDataSliceI32 {
     // Default Debug implementation but don't print all bytes, just the length.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PixelDataSliceU16")
+        f.debug_struct("PixelDataBufferI32")
             .field("info", &self.info)
             .field("buffer.len", &self.buffer.len())
             .field("stride", &self.stride)
@@ -51,54 +50,83 @@ impl std::fmt::Debug for PixelDataSliceU16 {
     }
 }
 
-impl PixelDataSliceU16 {
-    /// Interpret as 16-bit RGB.
-    ///
-    /// # Errors
-    /// - I/O errors reading the data.
-    pub fn from_rgb_16bit(mut pdinfo: PixelDataSliceInfo) -> Result<Self, PixelDataError> {
+impl PixelDataSliceI32 {
+    pub fn from_mono_32bit(mut pdinfo: PixelDataSliceInfo) -> Result<Self, PixelDataError> {
         let num_frames = usize::try_from(pdinfo.num_frames()).unwrap_or(1);
         let samples = usize::from(pdinfo.samples_per_pixel());
         let len = usize::from(pdinfo.cols()) * usize::from(pdinfo.rows()) * num_frames;
+        let pixel_pad = pdinfo.pixel_pad().map(Into::<i32>::into);
 
-        let mut buffer: Vec<u16> = Vec::with_capacity(len * samples);
+        let mut buffer: Vec<i32> = Vec::with_capacity(len * samples);
         let mut in_pos: usize = 0;
+        let mut min: i32 = i32::MAX;
+        let mut max: i32 = i32::MIN;
         let bytes = pdinfo.take_bytes();
         for _i in 0..len {
             for _j in 0..samples {
                 let val = if pdinfo.big_endian() {
                     if pdinfo.is_signed() {
-                        // There should't be signed values with RGB photometric interpretation.
-                        let val = PixelDataSlice::shift_i16(i16::from_be_bytes(
-                            bytes[in_pos..in_pos + I16_SIZE].try_into()?,
-                        ));
-                        in_pos += I16_SIZE;
+                        let val = i32::from_be_bytes(bytes[in_pos..in_pos + I32_SIZE].try_into()?);
+                        in_pos += I32_SIZE;
                         val
                     } else {
-                        let val = u16::from_be_bytes(bytes[in_pos..in_pos + U16_SIZE].try_into()?);
-                        in_pos += U16_SIZE;
+                        let val = u32::from_be_bytes(bytes[in_pos..in_pos + U32_SIZE].try_into()?)
+                            .min(i32::MAX as u32) as i32;
+                        in_pos += U32_SIZE;
                         val
                     }
                 } else if pdinfo.is_signed() {
-                    // There should't be signed values with RGB photometric interpretation.
-                    let val = PixelDataSlice::shift_i16(i16::from_le_bytes(
-                        bytes[in_pos..in_pos + I16_SIZE].try_into()?,
-                    ));
-                    in_pos += I16_SIZE;
+                    let val = i32::from_le_bytes(bytes[in_pos..in_pos + I32_SIZE].try_into()?);
+                    in_pos += I32_SIZE;
                     val
                 } else {
-                    let val = u16::from_le_bytes(bytes[in_pos..in_pos + U16_SIZE].try_into()?);
-                    in_pos += U16_SIZE;
+                    let val = u32::from_le_bytes(bytes[in_pos..in_pos + U32_SIZE].try_into()?)
+                        .min(i32::MAX as u32) as i32;
+                    in_pos += U32_SIZE;
                     val
                 };
                 buffer.push(val);
+                if pixel_pad.is_none_or(|pad_val| val != pad_val) {
+                    if val < min {
+                        min = val;
+                    }
+                    if val > max {
+                        max = val;
+                    }
+                }
             }
         }
-        Ok(Self::new(pdinfo, buffer))
+
+        pdinfo.set_min_val(min.into());
+        pdinfo.set_max_val(max.into());
+
+        let minmax_center = (f64::from(max) - f64::from(min)) / 2_f64;
+        let minmax_width = f64::from(max) - f64::from(min);
+        let mut already_has_minmax = false;
+        for winlevel in pdinfo.win_levels_mut() {
+            winlevel.set_out_min(f64::from(i32::MIN));
+            winlevel.set_out_max(f64::from(i32::MAX));
+
+            let same_width = (winlevel.width() - minmax_width).abs() < 0.01;
+            let same_center = (winlevel.center() - minmax_center).abs() < 0.01;
+            if same_width && same_center {
+                already_has_minmax = true;
+            }
+        }
+        if !already_has_minmax {
+            pdinfo.win_levels_mut().push(WindowLevel::new(
+                "Min/Max".to_string(),
+                minmax_center,
+                minmax_width,
+                f64::from(i32::MIN),
+                f64::from(i32::MAX),
+            ));
+        }
+        Ok(PixelDataSliceI32::new(pdinfo, buffer))
     }
 
     #[must_use]
-    pub fn new(info: PixelDataSliceInfo, buffer: Vec<u16>) -> Self {
+    pub fn new(info: PixelDataSliceInfo, buffer: Vec<i32>) -> Self {
         let stride = if info.planar_config() == 0 {
             1
         } else {
@@ -121,12 +149,12 @@ impl PixelDataSliceU16 {
     }
 
     #[must_use]
-    pub fn buffer(&self) -> &[u16] {
+    pub fn buffer(&self) -> &[i32] {
         &self.buffer
     }
 
     #[must_use]
-    pub fn into_buffer(self) -> Vec<u16> {
+    pub fn into_buffer(self) -> Vec<i32> {
         self.buffer
     }
 
@@ -157,7 +185,7 @@ impl PixelDataSliceU16 {
         y: usize,
         z: usize,
         winlevel: &WindowLevel,
-    ) -> Result<PixelU16, PixelDataError> {
+    ) -> Result<PixelI32, PixelDataError> {
         let cols = usize::from(self.info().cols());
         let rows = usize::from(self.info().rows());
         let samples = usize::from(self.info().samples_per_pixel());
@@ -183,8 +211,8 @@ impl PixelDataSliceU16 {
                 .copied()
                 .map(f64::from)
                 .map(|v| self.rescale(v))
-                .map(|v| winlevel.apply(v) as u16)
-                .or(self.info().pixel_pad())
+                .map(|v| winlevel.apply(v) as i32)
+                .or(self.info().pixel_pad().map(|v| v as i32))
                 .unwrap_or_default();
             let val = if self
                 .info()
@@ -198,11 +226,11 @@ impl PixelDataSliceU16 {
             (val, val, val)
         };
 
-        Ok(PixelU16 { x, y, z, r, g, b })
+        Ok(PixelI32 { x, y, z, r, g, b })
     }
 
     #[must_use]
-    pub fn pixel_iter(&self) -> SlicePixelU16Iter {
+    pub fn pixel_iter(&self) -> SlicePixelI32Iter {
         let winlevel = self
             .info()
             .win_levels()
@@ -213,10 +241,10 @@ impl PixelDataSliceU16 {
                 || {
                     WindowLevel::new(
                         "Default".to_string(),
-                        f64::from(u16::MAX) / 2_f64,
-                        f64::from(u16::MAX) / 2_f64,
-                        f64::from(u16::MIN),
-                        f64::from(u16::MAX),
+                        0_f64,
+                        f64::from(i32::MAX),
+                        f64::from(i32::MIN),
+                        f64::from(i32::MAX),
                     )
                 },
                 |winlevel| {
@@ -234,8 +262,8 @@ impl PixelDataSliceU16 {
     }
 
     #[must_use]
-    pub fn pixel_iter_with_win(&self, winlevel: WindowLevel) -> SlicePixelU16Iter {
-        SlicePixelU16Iter {
+    pub fn pixel_iter_with_win(&self, winlevel: WindowLevel) -> SlicePixelI32Iter {
+        SlicePixelI32Iter {
             slice: self,
             winlevel,
             src_byte_index: 0,
@@ -243,14 +271,14 @@ impl PixelDataSliceU16 {
     }
 }
 
-pub struct SlicePixelU16Iter<'buf> {
-    slice: &'buf PixelDataSliceU16,
+pub struct SlicePixelI32Iter<'buf> {
+    slice: &'buf PixelDataSliceI32,
     winlevel: WindowLevel,
     src_byte_index: usize,
 }
 
-impl Iterator for SlicePixelU16Iter<'_> {
-    type Item = PixelU16;
+impl Iterator for SlicePixelI32Iter<'_> {
+    type Item = PixelI32;
 
     fn next(&mut self) -> Option<Self::Item> {
         let cols = usize::from(self.slice.info().cols());

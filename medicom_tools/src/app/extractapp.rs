@@ -18,9 +18,9 @@
 
 use anyhow::{anyhow, Result};
 use image::{ImageBuffer, Rgb};
-use medicom::core::{
-    defn::ts::TSRef,
-    pixeldata::{
+use medicom::{
+    core::defn::ts::TSRef,
+    load::pixeldata::{
         pdinfo::PixelDataSliceInfo, pdslice::PixelDataSlice, pixel_i16::PixelI16,
         pixel_u16::PixelU16, pixel_u8::PixelU8,
     },
