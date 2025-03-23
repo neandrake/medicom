@@ -357,7 +357,7 @@ impl<W: Write> Writer<W> {
 
         if element.ts().big_endian() {
             dataset.write_all(&u16::to_be_bytes(
-                u16::try_from(element.tag() >> 16 & 0x0000_FFFF).unwrap_or(u16::MAX),
+                u16::try_from((element.tag() >> 16) & 0x0000_FFFF).unwrap_or(u16::MAX),
             ))?;
             bytes_written += std::mem::size_of::<u16>();
 
@@ -367,7 +367,7 @@ impl<W: Write> Writer<W> {
             bytes_written += std::mem::size_of::<u16>();
         } else {
             dataset.write_all(&u16::to_le_bytes(
-                u16::try_from(element.tag() >> 16 & 0x0000_FFFF).unwrap_or(u16::MAX),
+                u16::try_from((element.tag() >> 16) & 0x0000_FFFF).unwrap_or(u16::MAX),
             ))?;
             bytes_written += std::mem::size_of::<u16>();
             dataset.write_all(&u16::to_le_bytes(

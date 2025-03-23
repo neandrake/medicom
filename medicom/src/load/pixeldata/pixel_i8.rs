@@ -103,6 +103,7 @@ impl PixelDataSliceI8 {
     /// - If the x,y coordinate is invalid, either by being outside the image dimensions, or if the
     ///   Planar Configuration and Samples per Pixel are set up such that beginning of RGB values
     ///   must occur at specific indices.
+    #[allow(clippy::many_single_char_names)]
     pub fn get_pixel(
         &self,
         x: usize,

@@ -57,20 +57,23 @@ pub struct PixelDataSliceInfo {
     slope: Option<f64>,
     intercept: Option<f64>,
     unit: String,
-    min_val: f64,
-    max_val: f64,
-    win_levels: Vec<WindowLevel>,
     patient_pos: String,
     image_pos: [f64; 3],
     patient_orientation: [f64; 6],
+    min_val: f64,
+    max_val: f64,
+    win_levels: Vec<WindowLevel>,
     pd_bytes: Vec<u8>,
 }
 
 impl PixelDataSliceInfo {
+    #[must_use]
     pub fn image_pos(&self) -> &[f64; 3] {
         &self.image_pos
     }
 
+    #[allow(clippy::too_many_lines)] // No great way to shrink this down.
+    #[must_use]
     fn new(dcmroot: DicomRoot) -> Self {
         let big_endian = dcmroot.ts().big_endian();
         let mut pdinfo = Self {
@@ -91,12 +94,12 @@ impl PixelDataSliceInfo {
             slope: None,
             intercept: None,
             unit: String::new(),
-            min_val: 0f64,
-            max_val: 0f64,
-            win_levels: Vec::with_capacity(0),
             patient_pos: String::new(),
             image_pos: [0f64; 3],
             patient_orientation: [0f64; 6],
+            min_val: 0f64,
+            max_val: 0f64,
+            win_levels: Vec::with_capacity(0),
             pd_bytes: Vec::with_capacity(0),
         };
 
@@ -301,6 +304,7 @@ impl std::fmt::Debug for PixelDataSliceInfo {
     // Default Debug implementation but don't print all bytes, just the length.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PixelDataSliceInfo")
+            .field("dcmroot", &self.dcmroot)
             .field("big_endian", &self.big_endian)
             .field("vr", &self.vr)
             .field("samples_per_pixel", &self.samples_per_pixel)
@@ -332,6 +336,11 @@ impl std::fmt::Debug for PixelDataSliceInfo {
                 &self.intercept.map_or("None".to_string(), |v| v.to_string()),
             )
             .field("unit", &self.unit)
+            .field("patient_pos", &self.patient_pos)
+            .field("image_pos", &self.image_pos)
+            .field("patient_orientation", &self.patient_orientation)
+            .field("min_val", &self.min_val)
+            .field("max_val", &self.max_val)
             .field("win_levels", &self.win_levels)
             .field("pd_bytes", &self.pd_bytes.len())
             .finish()

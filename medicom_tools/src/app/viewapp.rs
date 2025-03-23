@@ -346,25 +346,25 @@ impl ImageViewer {
     ) -> egui::ProgressBar {
         // Remove non-DICOM files from the list, and do not count for progress.
         image_files.retain(|f| !image_loader.is_failed(&DicomUri::from(f)));
-        let mut loaded_count = 0_f32;
+        let mut loaded_count: usize = 0;
         for file in image_files.iter() {
             if image_loader.is_loaded(&DicomUri::from(file)) {
-                loaded_count += 1_f32;
+                loaded_count += 1;
             }
         }
-        let progress = loaded_count / image_files.len() as f32;
+
+        // Unlikely precision loss since number of files would at max be up in the thousands.
+        // Additionally, for reporting progress any loss of precision is fine.
+        #[allow(clippy::cast_precision_loss)]
+        let progress = (loaded_count / image_files.len()) as f32;
         if progress < 1_f32 {
-            let progress_text = format!(
-                "Loading images {}/{}...",
-                loaded_count as usize,
-                image_files.len()
-            );
+            let progress_text = format!("Loading images {}/{}...", loaded_count, image_files.len());
             egui::ProgressBar::new(progress)
                 .animate(true)
                 .show_percentage()
                 .text(progress_text)
         } else {
-            let progress_text = format!("Loaded {} images", loaded_count as usize);
+            let progress_text = format!("Loaded {loaded_count} images");
             egui::ProgressBar::new(progress)
                 .show_percentage()
                 .text(progress_text)
