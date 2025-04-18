@@ -95,7 +95,7 @@ impl CommandApplication for IndexApp {
                 let uid_to_doc = Self::scan_dir(folder)?;
                 Self::upsert_records(&dicom_coll, uid_to_doc)?;
             }
-            IndexCommand::Verify {} => {
+            IndexCommand::Verify => {
                 Self::verify_records(&self.args.db)?;
             }
         }

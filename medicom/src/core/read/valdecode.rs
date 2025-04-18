@@ -329,7 +329,7 @@ where
                     .map_err(|e| ParseErrorInfo(elem, e.to_string().as_str(), None).into())
             })
             .partition(ParseResult::is_ok);
-    if let Some(Err(e)) = errors.into_iter().last() {
+    if let Some(Err(e)) = errors.into_iter().next_back() {
         return Err(e);
     }
     let values: Vec<T> = values

@@ -26,6 +26,7 @@ pub struct WindowLevel {
 }
 
 impl WindowLevel {
+    #[must_use]
     pub fn new(name: String, center: f64, width: f64, out_min: f64, out_max: f64) -> Self {
         Self {
             name,

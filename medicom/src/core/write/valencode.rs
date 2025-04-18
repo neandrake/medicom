@@ -126,7 +126,7 @@ impl<'e> TryFrom<ElemAndStrings<'e>> for Vec<u8> {
             })
             .partition(ParseResult::is_ok);
 
-        if let Some(Err(e)) = errs.into_iter().last() {
+        if let Some(Err(e)) = errs.into_iter().next_back() {
             return Err(e);
         }
 

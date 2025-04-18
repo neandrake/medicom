@@ -46,18 +46,21 @@ impl PixelDataSlice {
 
     /// Shift an `i8` value into `u8` space, so `i8::MIN` -> `u8::MIN`.
     #[must_use]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn shift_i8(val: i8) -> u8 {
         (i16::from(val).saturating_add(1) + i16::from(i8::MAX)) as u8
     }
 
     /// Shift an `i16` value into `u16` space, so `i16::MIN` -> `u16::MIN`.
     #[must_use]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn shift_i16(val: i16) -> u16 {
         (i32::from(val).saturating_add(1) + i32::from(i16::MAX)) as u16
     }
 
     /// Shift an `i32` value into `u32` space, so `i32::MIN` -> `u32::MIN`.
     #[must_use]
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     pub fn shift_i32(val: i32) -> u32 {
         (i64::from(val).saturating_add(1) + i64::from(i32::MAX)) as u32
     }

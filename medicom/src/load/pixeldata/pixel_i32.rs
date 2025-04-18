@@ -51,6 +51,10 @@ impl std::fmt::Debug for PixelDataSliceI32 {
 }
 
 impl PixelDataSliceI32 {
+    /// Create `PixelDataSliceI32` from 32-bit monochrome slice data.
+    ///
+    /// # Errors
+    /// - Any errors interpreting little/big -endian bytes as 32bit numbers.
     pub fn from_mono_32bit(mut pdinfo: PixelDataSliceInfo) -> Result<Self, PixelDataError> {
         let num_frames = usize::try_from(pdinfo.num_frames()).unwrap_or(1);
         let samples = usize::from(pdinfo.samples_per_pixel());

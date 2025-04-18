@@ -494,7 +494,7 @@ impl PixelDataSliceInfo {
 
         if self.vr != &vr::OB && self.vr != &vr::OW {
             return Err(PixelDataError::InvalidVR(self.vr));
-        };
+        }
 
         if let BitsAlloc::Unsupported(val) = self.bits_alloc {
             return Err(PixelDataError::InvalidBitsAlloc(val));

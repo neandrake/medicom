@@ -106,6 +106,10 @@ impl PixelDataSliceI16 {
         Self::new(pdinfo, buffer)
     }
 
+    /// Create `PixelDataSliceI16` from 16-bit monochrome slice data.
+    ///
+    /// # Errors
+    /// - Any errors interpreting little/big -endian bytes as 16bit numbers.
     pub fn from_mono_16bit(mut pdinfo: PixelDataSliceInfo) -> Result<Self, PixelDataError> {
         let num_frames = usize::try_from(pdinfo.num_frames()).unwrap_or(1);
         let samples = usize::from(pdinfo.samples_per_pixel());
@@ -127,6 +131,9 @@ impl PixelDataSliceI16 {
                         in_pos += I16_SIZE;
                         val
                     } else {
+                        // Wrapping cast won't happen since we take the minimum value between the
+                        // u16 number and i16::MAX.
+                        #[allow(clippy::cast_possible_wrap)]
                         let val = u16::from_be_bytes(bytes[in_pos..in_pos + U16_SIZE].try_into()?)
                             .min(i16::MAX as u16) as i16;
                         in_pos += U16_SIZE;
@@ -137,6 +144,9 @@ impl PixelDataSliceI16 {
                     in_pos += I16_SIZE;
                     val
                 } else {
+                    // Wrapping cast won't happen since we take the minimum value between the
+                    // u16 number and i16::MAX.
+                    #[allow(clippy::cast_possible_wrap)]
                     let val = u16::from_le_bytes(bytes[in_pos..in_pos + U16_SIZE].try_into()?)
                         .min(i16::MAX as u16) as i16;
                     in_pos += U16_SIZE;
