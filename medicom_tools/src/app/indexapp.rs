@@ -194,7 +194,7 @@ impl IndexApp {
                     // TODO: handle sequences
                 } else {
                     Self::insert_elem_entry(child_elem, &mut dicom_doc.doc)
-                        .with_context(|| format!("Scan of file {:?}", entry.path()))?;
+                        .with_context(|| format!("Scan of file {}", entry.path().display()))?;
                 }
             }
         }

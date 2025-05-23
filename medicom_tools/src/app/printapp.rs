@@ -51,8 +51,8 @@ impl CommandApplication for PrintApp {
 
         let mut stdout = io::stdout().lock();
         stdout.write_all(format!(
-            "\n# Dicom-File-Format File: {:#?}\n\n# Dicom-Meta-Information-Header\n# Used TransferSyntax: {}\n",
-            path,
+            "\n# Dicom-File-Format File: {:#}\n\n# Dicom-Meta-Information-Header\n# Used TransferSyntax: {}\n",
+            path.display(),
             parser.ts().uid().ident()).as_ref()
         )?;
 

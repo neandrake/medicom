@@ -206,7 +206,7 @@ impl FindUserOp {
                 }
                 DimseMsg::Cmd(cmd) => {
                     return Err(AssocError::ab_failure(DimseError::DimseDicomMissing(
-                        DimseMsg::Cmd(cmd),
+                        Box::new(DimseMsg::Cmd(cmd)),
                     )));
                 }
                 DimseMsg::CloseMsg(close_msg) => return Err(AssocError::handled_close(close_msg)),

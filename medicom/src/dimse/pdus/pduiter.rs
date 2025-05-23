@@ -179,7 +179,9 @@ impl<R: Read> Iterator for CommandIter<R> {
     fn next(&mut self) -> Option<Self::Item> {
         let cmd = match self.reader.next() {
             Some(Ok(PduIterItem::Dataset(pdv))) => {
-                return Some(Err(DimseError::DimseCmdMissing(DimseMsg::Dataset(pdv))));
+                return Some(Err(DimseError::DimseCmdMissing(Box::new(
+                    DimseMsg::Dataset(pdv),
+                ))));
             }
             Some(Ok(PduIterItem::Pdu(pdu))) => {
                 return Some(Err(DimseError::UnexpectedPduType(pdu.pdu_type())));
@@ -207,7 +209,9 @@ impl<R: Read> Iterator for CommandIter<R> {
                     return Some(Err(DimseError::UnexpectedPduType(pdu.pdu_type())))
                 }
                 Some(Ok(PduIterItem::CmdMessage(cmd))) => {
-                    return Some(Err(DimseError::DimseDicomMissing(DimseMsg::Cmd(cmd))));
+                    return Some(Err(DimseError::DimseDicomMissing(Box::new(DimseMsg::Cmd(
+                        cmd,
+                    )))));
                 }
                 Some(Err(e)) => return Some(Err(e)),
                 None => break,

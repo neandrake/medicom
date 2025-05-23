@@ -84,13 +84,13 @@ pub enum DimseError {
     InvalidAppContext(String),
 
     #[error("expected command from association but got {0:?}")]
-    DimseCmdMissing(DimseMsg),
+    DimseCmdMissing(Box<DimseMsg>),
 
     #[error("expected dicom from association but got: {0:?}")]
-    DimseDicomMissing(DimseMsg),
+    DimseDicomMissing(Box<DimseMsg>),
 
     #[error("expected close command from association but got: {0:?}")]
-    DimseCloseMissing(DimseMsg),
+    DimseCloseMissing(Box<DimseMsg>),
 
     /// DIMSE Command Messages are expected to have a minimal set of elements.
     #[error("element missing from request: {0}")]

@@ -334,7 +334,7 @@ impl CommonAssoc {
         match Self::next_msg(reader, writer, max_pdu_rcv_size)? {
             DimseMsg::Cmd(cmd) => Ok(cmd),
             DimseMsg::Dataset(ds) => Err(AssocError::ab_failure(DimseError::DimseCmdMissing(
-                DimseMsg::Dataset(ds),
+                Box::new(DimseMsg::Dataset(ds)),
             ))),
             DimseMsg::CloseMsg(close_msg) => Err(AssocError::unhandled_close(close_msg)),
         }
@@ -362,7 +362,7 @@ impl CommonAssoc {
             let dcm_msg = Self::next_msg(&mut reader, &mut writer, pdu_max_rcv_size)?;
             let DimseMsg::Dataset(pdv) = dcm_msg else {
                 return Err(AssocError::ab_failure(DimseError::DimseDicomMissing(
-                    dcm_msg,
+                    Box::new(dcm_msg),
                 )));
             };
 

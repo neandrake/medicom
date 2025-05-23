@@ -208,7 +208,7 @@ pub fn process_xml_files(files: Vec<File>, folder: &Path) -> Result<(), Error> {
             let error = errors
                 .into_iter()
                 .filter_map(Result::err)
-                .map(|e| Error::new(std::io::ErrorKind::Other, e))
+                .map(std::io::Error::other)
                 .next();
             if let Some(error) = error {
                 return Err(error);

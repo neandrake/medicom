@@ -73,7 +73,7 @@ impl<R: Read, W: Write> AssociationDevice<R, W> {
                             &mut self.writer,
                             self.assoc.common().get_pdu_max_snd_size(),
                         )?;
-                        return Err(fail(&format!("Failed resolving {path:?}")));
+                        return Err(fail(&format!("Failed resolving {}", path.display())));
                     }
                 };
 

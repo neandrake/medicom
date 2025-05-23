@@ -37,6 +37,7 @@ use medicom::{
 use crate::app::scpapp::{fail, prog, AssociationDevice, Stat, StatusMsgBuilder};
 
 impl<R: Read, W: Write> AssociationDevice<R, W> {
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn handle_c_move_req(
         &mut self,
         op: &mut MoveSvcOp,
@@ -119,7 +120,7 @@ impl<R: Read, W: Write> AssociationDevice<R, W> {
                             &Stat::fail(),
                             &prog(0, successful, remaining, 0),
                         )?;
-                        return Err(fail(&format!("Failed resolving {path:?}")));
+                        return Err(fail(&format!("Failed resolving {}", path.display())));
                     }
                 };
 

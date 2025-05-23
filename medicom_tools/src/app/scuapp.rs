@@ -169,7 +169,9 @@ impl SvcUserApp {
                 }
             }
             other => {
-                return Err(AssocError::error(DimseError::DimseDicomMissing(other)));
+                return Err(AssocError::error(DimseError::DimseDicomMissing(Box::new(
+                    other,
+                ))));
             }
         }
 
@@ -263,6 +265,7 @@ impl CommandApplication for SvcUserApp {
 }
 
 impl SvcUserApp {
+    #[allow(clippy::too_many_lines)]
     fn start(
         &self,
         mut reader: &mut BufReader<&TcpStream>,

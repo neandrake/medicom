@@ -86,7 +86,6 @@ impl PhotoInterp {
 
 impl From<&str> for PhotoInterp {
     /// Parse Photometric Interpretation from its DICOM element value.
-    #[must_use]
     fn from(value: &str) -> Self {
         if value == "RGB" {
             Self::Rgb
