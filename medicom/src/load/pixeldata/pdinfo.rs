@@ -74,7 +74,7 @@ impl PixelDataSliceInfo {
 
     #[allow(clippy::too_many_lines)] // No great way to shrink this down.
     #[must_use]
-    fn new(dcmroot: DicomRoot) -> Self {
+    pub(crate) fn process(dcmroot: DicomRoot) -> Self {
         let big_endian = dcmroot.ts().big_endian();
         let mut pdinfo = Self {
             dcmroot,
@@ -579,6 +579,6 @@ impl PixelDataSliceInfo {
         let Some(dcmroot) = DicomRoot::parse(&mut parser)? else {
             return Err(PixelDataError::MissingPixelData);
         };
-        Ok(PixelDataSliceInfo::new(dcmroot))
+        Ok(PixelDataSliceInfo::process(dcmroot))
     }
 }
