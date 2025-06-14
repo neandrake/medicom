@@ -143,7 +143,7 @@ impl PixelDataSliceU8 {
                 .map(f64::from)
                 .map(|v| self.rescale(v))
                 .map(|v| winlevel.apply(v) as u8)
-                .or(self.info().pixel_pad().map(|v| v as u8))
+                .or_else(|| self.info().pixel_pad().map(|v| v as u8))
                 .unwrap_or_default();
             let val = if self
                 .info()

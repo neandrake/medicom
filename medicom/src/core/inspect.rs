@@ -218,7 +218,7 @@ impl<'e> FormattedElement<'e> {
             FormattedTagType::GroupLength(self.elem.tag())
         } else {
             if let Some(tag) = self.dict.get_tag_by_number(self.elem.tag()) {
-                return FormattedTagType::Known(tag.tag(), tag.ident().to_string());
+                return FormattedTagType::Known(tag.num(), tag.ident().to_string());
             }
 
             FormattedTagType::Unknown(self.elem.tag())

@@ -217,7 +217,7 @@ impl PixelDataSliceI32 {
                 .map(f64::from)
                 .map(|v| self.rescale(v))
                 .map(|v| winlevel.apply(v) as i32)
-                .or(self.info().pixel_pad().map(|v| i32::from(v)))
+                .or_else(|| self.info().pixel_pad().map(i32::from))
                 .unwrap_or_default();
             let val = if self
                 .info()

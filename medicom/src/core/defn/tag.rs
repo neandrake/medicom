@@ -41,7 +41,7 @@ pub struct Tag {
     ident: &'static str,
 
     /// The tag number.
-    tag: u32,
+    num: u32,
 
     /// The default value representation which should be used to read this tag when parsing
     /// `ImplicitVR` transfer syntaxes. Some tags may support multiple possible implicit VRs,
@@ -67,7 +67,7 @@ impl Tag {
     ) -> Self {
         Self {
             ident,
-            tag,
+            num: tag,
             implicit_vr,
             vm,
             desc,
@@ -82,8 +82,8 @@ impl Tag {
 
     /// Get the tag's number.
     #[must_use]
-    pub fn tag(&self) -> u32 {
-        self.tag
+    pub fn num(&self) -> u32 {
+        self.num
     }
 
     /// Get the tag's implicit value representation, if it has one.
@@ -191,21 +191,21 @@ impl Tag {
 /// `PartialEq` to allow for ordering of tags based on their number.
 impl PartialEq for Tag {
     fn eq(&self, other: &Tag) -> bool {
-        self.tag.eq(&other.tag)
+        self.num.eq(&other.num)
     }
 }
 
 /// `Hash` to allow for hashing based on the tag number.
 impl Hash for Tag {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.tag.hash(state);
+        self.num.hash(state);
     }
 }
 
 /// Access the numeric tag, to allow functions to take `Into<u32>` rather than plain u32.
 impl From<&Tag> for u32 {
     fn from(value: &Tag) -> Self {
-        value.tag
+        value.num
     }
 }
 
@@ -214,7 +214,7 @@ impl From<&Tag> for u32 {
 /// specifying which 1-based item child node is being referenced in the path.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct TagNode {
-    tag: u32,
+    tagnum: u32,
     item: Option<usize>,
 }
 
@@ -226,15 +226,15 @@ impl TagNode {
         u32: From<T>,
     {
         TagNode {
-            tag: u32::from(tag),
+            tagnum: u32::from(tag),
             item,
         }
     }
 
     /// Get the tag number for this node.
     #[must_use]
-    pub fn tag(&self) -> u32 {
-        self.tag
+    pub fn tagnum(&self) -> u32 {
+        self.tagnum
     }
 
     /// Get the 1-based item number this node references if this is a non-leaf node.
@@ -284,7 +284,7 @@ impl TagNode {
         // Look up by name.
         let lookup = dict.and_then(|d| d.get_tag_by_name(tag_id));
         if let Some(tag) = lookup {
-            return Ok(TagNode::new(tag.tag, index));
+            return Ok(TagNode::new(tag.num, index));
         }
 
         // Remove optional surrounding parens and optional group/elem splitter.
@@ -301,22 +301,22 @@ impl TagNode {
 impl Debug for TagNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.item {
-            None => write!(f, "{}", Tag::format_tag_to_display(self.tag)),
-            Some(item) => write!(f, "{}[{}]", Tag::format_tag_to_display(self.tag), item),
+            None => write!(f, "{}", Tag::format_tag_to_display(self.tagnum)),
+            Some(item) => write!(f, "{}[{}]", Tag::format_tag_to_display(self.tagnum), item),
         }
     }
 }
 
 impl From<u32> for TagNode {
     fn from(tag: u32) -> Self {
-        TagNode { tag, item: None }
+        TagNode { tagnum: tag, item: None }
     }
 }
 
 impl From<&Tag> for TagNode {
     fn from(tag: &Tag) -> Self {
         TagNode {
-            tag: u32::from(tag),
+            tagnum: u32::from(tag),
             item: None,
         }
     }
@@ -325,7 +325,7 @@ impl From<&Tag> for TagNode {
 impl From<&SequenceElement> for TagNode {
     fn from(element: &SequenceElement) -> Self {
         TagNode {
-            tag: element.sq_tag(),
+            tagnum: element.sq_tag(),
             item: element.item(),
         }
     }
@@ -337,7 +337,7 @@ where
 {
     fn from(tuple: (T, usize)) -> Self {
         TagNode {
-            tag: u32::from(tuple.0),
+            tagnum: u32::from(tuple.0),
             item: Some(tuple.1),
         }
     }
@@ -397,15 +397,15 @@ impl TagPath {
             // Filter out tags related to items & delimiters as they are markers which are already
             // contextually conveyed by the item number indicators.
             .filter(|node| {
-                node.tag != ITEM
-                    && node.tag != ITEM_DELIMITATION_ITEM
-                    && node.tag != SEQUENCE_DELIMITATION_ITEM
+                node.tagnum != ITEM
+                    && node.tagnum != ITEM_DELIMITATION_ITEM
+                    && node.tagnum != SEQUENCE_DELIMITATION_ITEM
             })
             .map(|node| {
                 let tag: String = dict
-                    .and_then(|d| d.get_tag_by_number(node.tag))
+                    .and_then(|d| d.get_tag_by_number(node.tagnum))
                     .map_or_else(
-                        || Tag::format_tag_to_display(node.tag),
+                        || Tag::format_tag_to_display(node.tagnum),
                         |t| t.ident.to_string(),
                     );
                 match node.item {
@@ -491,7 +491,7 @@ where
                 tag_node.item()
             };
             nodes.push(TagNode {
-                tag: tag_node.tag(),
+                tagnum: tag_node.tagnum(),
                 item,
             });
         }
@@ -517,7 +517,7 @@ impl From<&[&Tag]> for TagPath {
         let mut nodes: Vec<TagNode> = Vec::with_capacity(len);
         for (i, tag) in tags.iter().enumerate() {
             let item = if i == len - 1 { None } else { Some(1) };
-            nodes.push(TagNode::new(tag.tag, item));
+            nodes.push(TagNode::new(tag.num, item));
         }
         TagPath { nodes }
     }

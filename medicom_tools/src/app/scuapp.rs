@@ -187,7 +187,7 @@ impl SvcUserApp {
         for (tag, val) in query {
             let tag = TagNode::parse(tag, Some(&STANDARD_DICOM_DICTIONARY))
                 .map_err(|e| AssocError::error(DimseError::from(e)))
-                .map(|t| STANDARD_DICOM_DICTIONARY.get_tag_by_number(t.tag()))?
+                .map(|t| STANDARD_DICOM_DICTIONARY.get_tag_by_number(t.tagnum()))?
                 .ok_or_else(|| {
                     AssocError::error(DimseError::ApplicationError(
                         format!("Unable resolve tag: {tag}").into(),

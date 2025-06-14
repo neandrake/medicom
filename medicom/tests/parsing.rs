@@ -151,7 +151,7 @@ mod parsing_tests {
         // zero tag is not technically valid but itself should't cause a parse error). for an implicit
         // vr transfer syntax the VR will be selected as UN and should parse
         let first_elem: DicomElement = parser
-            .find(|x| !x.is_ok() || x.as_ref().unwrap().tag() > SpecificCharacterSet.tag())
+            .find(|x| !x.is_ok() || x.as_ref().unwrap().tag() > SpecificCharacterSet.num())
             .expect("Should have returned Some(Ok(elem))")
             .expect("Should have returned Ok(elem)");
 
@@ -164,7 +164,7 @@ mod parsing_tests {
             MockDicomDataset::build_mock_parser(&[STANDARD_HEADER, NULL_ELEMENT]);
 
         let first_non_fme: Option<std::result::Result<DicomElement, ParseError>> =
-            parser.find(|x| !x.is_ok() || x.as_ref().unwrap().tag() > SpecificCharacterSet.tag());
+            parser.find(|x| !x.is_ok() || x.as_ref().unwrap().tag() > SpecificCharacterSet.num());
 
         assert!(first_non_fme.is_none());
     }
@@ -197,7 +197,7 @@ mod parsing_tests {
 
         let first_elem: DicomElement = parser.next().expect("First element should be Some")?;
 
-        assert_eq!(FileMetaInformationGroupLength.tag(), first_elem.tag());
+        assert_eq!(FileMetaInformationGroupLength.num(), first_elem.tag());
 
         assert_eq!(ParserState::ReadFileMeta, parser.parser_state());
 
@@ -252,7 +252,7 @@ mod parsing_tests {
         let dcmroot: DicomRoot =
             DicomRoot::parse(&mut parser)?.expect("Failed to parse DICOM elements");
         let sop_class_uid: &DicomObject = dcmroot
-            .get_child_by_tag(SOPClassUID.tag())
+            .get_child_by_tag(SOPClassUID.num())
             .expect("Should have SOP Class UID");
 
         let element: &DicomElement = sop_class_uid.element();
@@ -364,7 +364,7 @@ mod parsing_tests {
                 .next()
                 .expect("Have first child")
                 .1;
-            assert_eq!(SequenceDelimitationItem.tag(), child_obj.element().tag(),);
+            assert_eq!(SequenceDelimitationItem.num(), child_obj.element().tag(),);
 
             let rtrss_sq: &DicomObject = item_obj
                 .get_child_by_tag(&RTReferencedStudySequence)
@@ -423,7 +423,7 @@ mod parsing_tests {
                 .expect("Get only child of contour image seq")
                 .1;
             assert_eq!(
-                SequenceDelimitationItem.tag(),
+                SequenceDelimitationItem.num(),
                 cont_img_sq_child.element().tag(),
             );
             assert_eq!(0, cont_img_sq_child.child_count());
@@ -490,7 +490,7 @@ mod parsing_tests {
         )?;
 
         let rss_obj: &DicomObject = dcmroot
-            .get_child_by_tag(ReferencedStudySequence.tag())
+            .get_child_by_tag(ReferencedStudySequence.num())
             .expect("Should be able to parse ReferencedStudySequence");
         // does contain a child item which is the delimitation item
         assert_eq!(1, rss_obj.child_count());
@@ -504,7 +504,7 @@ mod parsing_tests {
             .expect("Should be able to get single child item")
             .1
             .element();
-        assert_eq!(SequenceDelimitationItem.tag(), sdi_elem.tag());
+        assert_eq!(SequenceDelimitationItem.num(), sdi_elem.tag());
 
         Ok(())
     }
@@ -528,7 +528,7 @@ mod parsing_tests {
         )?;
 
         let private_un_seq_obj: &DicomObject = dcmroot
-            .get_child_by_tag(SharedFunctionalGroupsSequence.tag())
+            .get_child_by_tag(SharedFunctionalGroupsSequence.num())
             .expect("Fixture should have this this tag")
             .get_item_by_index(1)
             .expect("This sequence should have 1 sequence item")
@@ -549,12 +549,12 @@ mod parsing_tests {
         // The item has 26 elements, plus item delimiter
         assert_eq!(27, child_obj.child_count());
         assert_eq!(
-            ItemDelimitationItem.tag(),
+            ItemDelimitationItem.num(),
             *child_obj.iter_child_nodes().last().unwrap().0,
         );
 
         let sopuid: &DicomElement = child_obj
-            .get_child_by_tag(SOPClassUID.tag())
+            .get_child_by_tag(SOPClassUID.num())
             .expect("Should have SOPClassUID child element")
             .element();
         // The MR Image Storage UID is odd-length which means the value is padded with a null byte.
@@ -602,7 +602,7 @@ mod parsing_tests {
         assert_eq!(&ExplicitVRBigEndian, dcmroot.ts());
 
         let sis_obj: &DicomObject = dcmroot
-            .get_child_by_tag(SourceImageSequence.tag())
+            .get_child_by_tag(SourceImageSequence.num())
             .expect("Should have Source Image Sequence");
 
         // The SourceImageSequence is explicitly set with VR of UN, even though the standard dictionary
@@ -634,7 +634,7 @@ mod parsing_tests {
         assert_eq!(2, item_obj.child_count());
 
         let item_elem: &DicomElement = item_obj.element();
-        assert_eq!(Item.tag(), item_elem.tag());
+        assert_eq!(Item.num(), item_elem.tag());
         assert_eq!(&ImplicitVRLittleEndian, item_elem.ts());
 
         for (_tag, inner_obj) in item_obj.iter_child_nodes() {
@@ -707,13 +707,13 @@ mod parsing_tests {
         )?;
 
         let scs_elem: &DicomElement = dcmroot
-            .get_child_by_tag(SpecificCharacterSet.tag())
+            .get_child_by_tag(SpecificCharacterSet.num())
             .expect("Should have Specific Character Set")
             .element();
         assert!(scs_elem.is_empty());
 
         let pat_name: &DicomElement = dcmroot
-            .get_child_by_tag(PatientsName.tag())
+            .get_child_by_tag(PatientsName.num())
             .expect("Should have Patient Name")
             .element();
 
@@ -730,7 +730,7 @@ mod parsing_tests {
         }
 
         let pat_com: &DicomElement = dcmroot
-            .get_child_by_tag(PatientComments.tag())
+            .get_child_by_tag(PatientComments.num())
             .expect("Should have Patient Comments")
             .element();
 
@@ -811,15 +811,15 @@ mod parsing_tests {
         )?;
 
         let ref_sop_class_uid_elem: &DicomElement = dcmroot
-            .get_child_by_tag(SharedFunctionalGroupsSequence.tag())
+            .get_child_by_tag(SharedFunctionalGroupsSequence.num())
             .expect("Should have SharedFunctionalGroupsSequence")
             .get_item_by_index(1)
             .expect("Should have item")
-            .get_child_by_tag(ReferencedImageSequence.tag())
+            .get_child_by_tag(ReferencedImageSequence.num())
             .expect("Should have ReferencedImageSequence")
             .get_item_by_index(1)
             .expect("Should have item")
-            .get_child_by_tag(ReferencedSOPClassUID.tag())
+            .get_child_by_tag(ReferencedSOPClassUID.num())
             .expect("Should have ReferencedSOPClassUID")
             .element();
 
@@ -908,7 +908,7 @@ mod parsing_tests {
         assert_eq!(&ImplicitVRLittleEndian, dcmroot.ts());
 
         let study_desc_elem: &DicomElement = dcmroot
-            .get_child_by_tag(StudyDescription.tag())
+            .get_child_by_tag(StudyDescription.num())
             .expect("Should have Study Description tag")
             .element();
 
@@ -948,7 +948,7 @@ mod parsing_tests {
         // check we can read the first element just fine
         let fme_length = u32::try_from(&ElementWithVr::of(
             dcmroot
-                .get_child_by_tag(FileMetaInformationGroupLength.tag())
+                .get_child_by_tag(FileMetaInformationGroupLength.num())
                 .expect("Should have FileMetaInfo GroupLength tag")
                 .element(),
         ))?;
@@ -1467,7 +1467,7 @@ mod parsing_tests {
         let dcmroot: DicomRoot = parse_file("gdcm/gdcmData/SignedShortLosslessBug.dcm", with_std)?;
 
         let patients_weight = dcmroot
-            .get_child_by_tag(PatientsWeight.tag())
+            .get_child_by_tag(PatientsWeight.num())
             .expect("PatientWeight should exist");
 
         let value: RawValue = patients_weight.element().parse_value()?;

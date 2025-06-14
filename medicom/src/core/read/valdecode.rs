@@ -43,7 +43,7 @@ impl<'s> TryFrom<StringAndVr<'s>> for RawValue<'s> {
             Ok(RawValue::of_string(value))
         } else if vr == &AT {
             let tag_node = TagNode::parse(value, None)?;
-            Ok(RawValue::of_attr(Attribute(tag_node.tag())))
+            Ok(RawValue::of_attr(Attribute(tag_node.tagnum())))
         } else if vr == &UI {
             Ok(RawValue::of_uid(value))
         } else if vr == &SS {

@@ -222,7 +222,7 @@ impl DicomRoot {
     /// and the tag's implicit VR if present, or `UN` if not.
     #[must_use]
     pub fn create_element(&self, tag: &Tag) -> DicomElement {
-        DicomElement::new_empty(tag.tag(), tag.implicit_vr().unwrap_or(&UN), self.ts)
+        DicomElement::new_empty(tag.num(), tag.implicit_vr().unwrap_or(&UN), self.ts)
     }
 
     /// Add the given element as a child to this root object. Returns a reference to the newly
@@ -509,7 +509,7 @@ impl DicomObject {
     /// Get a child node with the given `TagNode`.
     #[must_use]
     pub fn get_child_by_tagnode(&self, tag_node: &TagNode) -> Option<&DicomObject> {
-        self.get_child_by_tag(tag_node.tag())
+        self.get_child_by_tag(tag_node.tagnum())
             .and_then(|o| match tag_node.item() {
                 None => Some(o),
                 Some(item_num) => o.get_item_by_index(item_num),
@@ -518,7 +518,7 @@ impl DicomObject {
 
     /// Get a mutable child node with the given `TagNode`.
     pub fn get_child_by_tagnode_mut(&mut self, tag_node: &TagNode) -> Option<&mut DicomObject> {
-        self.get_child_by_tag_mut(tag_node.tag())
+        self.get_child_by_tag_mut(tag_node.tagnum())
             .and_then(|o| match tag_node.item() {
                 None => Some(o),
                 Some(item_num) => o.get_item_by_index_mut(item_num),

@@ -185,7 +185,7 @@ impl PixelDataSliceU16 {
                 .map(f64::from)
                 .map(|v| self.rescale(v))
                 .map(|v| winlevel.apply(v) as u16)
-                .or(self.info().pixel_pad())
+                .or_else(|| self.info().pixel_pad())
                 .unwrap_or_default();
             let val = if self
                 .info()

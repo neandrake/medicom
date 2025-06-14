@@ -730,7 +730,7 @@ fn get_prev_path(mut current: TagPath) -> TagPath {
 /// Removes the last node in the given path if it's an ITEM.
 fn strip_last_item(mut tagpath: TagPath) -> TagPath {
     if let Some(last) = tagpath.nodes().last() {
-        if last.tag() == ITEM {
+        if last.tagnum() == ITEM {
             let node_len = tagpath.nodes().len();
             return TagPath::from(
                 tagpath

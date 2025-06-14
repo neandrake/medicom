@@ -200,14 +200,14 @@ impl<R: Read, W: Write> AssociationDevice<R, W> {
         let mut include_keys: Vec<u32> = Vec::new();
         let mut meta_keys: Vec<u32> = Vec::new();
         for elem in dcm.flatten() {
-            if elem.tag() == QueryRetrieveLevel.tag() {
+            if elem.tag() == QueryRetrieveLevel.num() {
                 continue;
             }
             let Some(tag) = STANDARD_DICOM_DICTIONARY.get_tag_by_number(elem.tag()) else {
                 continue;
             };
             if PATIENT_LEVEL_META_TAGS.contains(&tag) || STUDY_LEVEL_META_TAGS.contains(&tag) {
-                meta_keys.push(tag.tag());
+                meta_keys.push(tag.num());
                 continue;
             }
 
@@ -250,29 +250,29 @@ impl<R: Read, W: Write> AssociationDevice<R, W> {
 
         if ql.include_patient_tags() {
             for tag in PATIENT_LEVEL_TAGS {
-                if !include_keys.contains(&tag.tag()) {
-                    include_keys.push(tag.tag());
+                if !include_keys.contains(&tag.num()) {
+                    include_keys.push(tag.num());
                 }
             }
         }
         if ql.include_study_tags() {
             for tag in STUDY_LEVEL_TAGS {
-                if !include_keys.contains(&tag.tag()) {
-                    include_keys.push(tag.tag());
+                if !include_keys.contains(&tag.num()) {
+                    include_keys.push(tag.num());
                 }
             }
         }
         if ql.include_series_tags() {
             for tag in SERIES_LEVEL_TAGS {
-                if !include_keys.contains(&tag.tag()) {
-                    include_keys.push(tag.tag());
+                if !include_keys.contains(&tag.num()) {
+                    include_keys.push(tag.num());
                 }
             }
         }
         if ql.include_image_tags() {
             for tag in IMAGE_LEVEL_TAGS {
-                if !include_keys.contains(&tag.tag()) {
-                    include_keys.push(tag.tag());
+                if !include_keys.contains(&tag.num()) {
+                    include_keys.push(tag.num());
                 }
             }
         }
@@ -367,35 +367,35 @@ impl<R: Read, W: Write> AssociationDevice<R, W> {
                 let number_of_studies = study_uids.len();
                 let number_of_sops = sop_instances.len();
 
-                if meta_keys.contains(&NumberofPatientRelatedStudies.tag()) {
+                if meta_keys.contains(&NumberofPatientRelatedStudies.num()) {
                     res_root.add_child_with_val(
                         &NumberofPatientRelatedStudies,
                         RawValue::of_string(format!("{number_of_studies}")),
                     );
                 }
 
-                if meta_keys.contains(&NumberofPatientRelatedSeries.tag()) {
+                if meta_keys.contains(&NumberofPatientRelatedSeries.num()) {
                     res_root.add_child_with_val(
                         &NumberofPatientRelatedSeries,
                         RawValue::of_string(format!("{number_of_series}")),
                     );
                 }
 
-                if meta_keys.contains(&NumberofPatientRelatedInstances.tag()) {
+                if meta_keys.contains(&NumberofPatientRelatedInstances.num()) {
                     res_root.add_child_with_val(
                         &NumberofPatientRelatedInstances,
                         RawValue::of_string(format!("{number_of_sops}")),
                     );
                 }
 
-                if meta_keys.contains(&NumberofStudyRelatedSeries.tag()) {
+                if meta_keys.contains(&NumberofStudyRelatedSeries.num()) {
                     res_root.add_child_with_val(
                         &NumberofStudyRelatedSeries,
                         RawValue::of_string(format!("{number_of_series}")),
                     );
                 }
 
-                if meta_keys.contains(&NumberofStudyRelatedInstances.tag()) {
+                if meta_keys.contains(&NumberofStudyRelatedInstances.num()) {
                     res_root.add_child_with_val(
                         &NumberofStudyRelatedInstances,
                         RawValue::of_string(format!("{number_of_sops}")),

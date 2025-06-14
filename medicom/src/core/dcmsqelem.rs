@@ -89,7 +89,7 @@ impl SequenceElement {
 
     #[must_use]
     pub fn sq_tag(&self) -> u32 {
-        self.node.tag()
+        self.node.tagnum()
     }
 
     #[must_use]

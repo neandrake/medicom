@@ -287,19 +287,19 @@ impl StoreUserOp {
         let mut header_elems: Vec<DicomElement> = Vec::new();
         for elem in parser.by_ref() {
             let tag = elem.tag();
-            if tag == SpecificCharacterSet.tag() {
+            if tag == SpecificCharacterSet.num() {
                 spec_char_set = elem
                     .parse_value()
                     .map_err(|e| AssocError::ab_failure(DimseError::ParseError(e)))?
                     .string()
                     .cloned();
-            } else if tag == SOPClassUID.tag() {
+            } else if tag == SOPClassUID.num() {
                 sop_class_uid = elem
                     .parse_value()
                     .map_err(|e| AssocError::ab_failure(DimseError::ParseError(e)))?
                     .string()
                     .cloned();
-            } else if tag == SOPInstanceUID.tag() {
+            } else if tag == SOPInstanceUID.num() {
                 sop_inst_uid = elem
                     .parse_value()
                     .map_err(|e| AssocError::ab_failure(DimseError::ParseError(e)))?
@@ -307,7 +307,7 @@ impl StoreUserOp {
                     .cloned();
             }
             header_elems.push(elem);
-            if tag >= SOPInstanceUID.tag() {
+            if tag >= SOPInstanceUID.num() {
                 break;
             }
         }

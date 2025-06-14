@@ -80,8 +80,8 @@ impl ParseStop {
     }
 
     fn is_before_tag_value((target, current): (&TagNode, &TagNode)) -> bool {
-        let target_tag = target.tag();
-        match current.tag() {
+        let target_tag = target.tagnum();
+        match current.tagnum() {
             // The target tag has not yet been encountered, do not stop parsing.
             current_tag if current_tag < target_tag => false,
 
@@ -107,8 +107,8 @@ impl ParseStop {
     }
 
     fn is_after_tag_value((target, current): (&TagNode, &TagNode)) -> bool {
-        let target_tag = target.tag();
-        match current.tag() {
+        let target_tag = target.tagnum();
+        match current.tagnum() {
             // The target tag has not yet been encountered, do not stop parsing.
             current_tag if current_tag < target_tag => false,
 

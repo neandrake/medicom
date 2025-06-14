@@ -508,7 +508,7 @@ mod tests {
     ) -> usize {
         let (_act_tag, act_obj) =
             act_pair.unwrap_or_else(|| panic!("Should have element: {}", exp_tag.ident()));
-        assert_eq!(exp_tag.tag(), act_obj.element().tag());
+        assert_eq!(exp_tag.num(), act_obj.element().tag());
         let act_val = act_obj
             .element()
             .parse_value()
