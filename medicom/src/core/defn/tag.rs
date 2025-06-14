@@ -309,7 +309,10 @@ impl Debug for TagNode {
 
 impl From<u32> for TagNode {
     fn from(tag: u32) -> Self {
-        TagNode { tagnum: tag, item: None }
+        TagNode {
+            tagnum: tag,
+            item: None,
+        }
     }
 }
 
