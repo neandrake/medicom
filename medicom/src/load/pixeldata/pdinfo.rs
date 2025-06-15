@@ -24,10 +24,14 @@ use crate::{
         values::RawValue,
     },
     dict::tags,
-    load::pixeldata::{
-        pdslice::PixelDataSlice, pdwinlevel::WindowLevel, pixel_i16::PixelDataSliceI16,
-        pixel_i32::PixelDataSliceI32, pixel_u16::PixelDataSliceU16, pixel_u32::PixelDataSliceU32,
-        pixel_u8::PixelDataSliceU8, BitsAlloc, PhotoInterp, PixelDataError,
+    load::{
+        imgvol::VolDims,
+        pixeldata::{
+            pdslice::PixelDataSlice, pdwinlevel::WindowLevel, pixel_i16::PixelDataSliceI16,
+            pixel_i32::PixelDataSliceI32, pixel_u16::PixelDataSliceU16,
+            pixel_u32::PixelDataSliceU32, pixel_u8::PixelDataSliceU8, BitsAlloc, PhotoInterp,
+            PixelDataError,
+        },
     },
 };
 
@@ -43,12 +47,15 @@ pub struct PixelDataSliceInfo {
     dcmroot: DicomRoot,
     big_endian: bool,
     vr: VRRef,
+    slice_thickness: f32,
+    spacing_between_slices: f32,
     samples_per_pixel: u16,
     photo_interp: Option<PhotoInterp>,
     planar_config: u16,
     num_frames: i32,
     cols: u16,
     rows: u16,
+    pixel_spacing: (f32, f32),
     pixel_pad: Option<u16>,
     bits_alloc: BitsAlloc,
     bits_stored: u16,
@@ -80,12 +87,15 @@ impl PixelDataSliceInfo {
             dcmroot,
             big_endian,
             vr: &vr::OB,
+            slice_thickness: 0f32,
+            spacing_between_slices: 0f32,
             samples_per_pixel: 0,
             photo_interp: None,
             planar_config: 0,
             num_frames: 1,
             cols: 0,
             rows: 0,
+            pixel_spacing: (0f32, 0f32),
             pixel_pad: None,
             bits_alloc: BitsAlloc::Unsupported(0),
             bits_stored: 0,
@@ -103,6 +113,20 @@ impl PixelDataSliceInfo {
             pd_bytes: Vec::with_capacity(0),
         };
 
+        if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::SliceThickness)
+            .and_then(|v| v.float())
+        {
+            pdinfo.slice_thickness = val;
+        }
+        if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::SpacingBetweenSlices)
+            .and_then(|v| v.float())
+        {
+            pdinfo.spacing_between_slices = val;
+        }
         if let Some(val) = pdinfo
             .dcmroot()
             .get_value_by_tag(&tags::SamplesperPixel)
@@ -144,6 +168,12 @@ impl PixelDataSliceInfo {
             .and_then(|v| v.ushort())
         {
             pdinfo.cols = val;
+        }
+        if let Some(RawValue::Floats(val)) = pdinfo.dcmroot().get_value_by_tag(&tags::PixelSpacing)
+        {
+            if val.len() == 2 {
+                pdinfo.pixel_spacing = (val[0], val[1]);
+            }
         }
         if let Some(val) = pdinfo
             .dcmroot()
@@ -307,6 +337,8 @@ impl std::fmt::Debug for PixelDataSliceInfo {
             .field("dcmroot", &self.dcmroot)
             .field("big_endian", &self.big_endian)
             .field("vr", &self.vr)
+            .field("slice_thickness", &self.slice_thickness)
+            .field("spacing_between_slices", &self.spacing_between_slices)
             .field("samples_per_pixel", &self.samples_per_pixel)
             .field(
                 "photo_interp",
@@ -319,6 +351,7 @@ impl std::fmt::Debug for PixelDataSliceInfo {
             .field("num_frames", &self.num_frames)
             .field("cols", &self.cols)
             .field("rows", &self.rows)
+            .field("pixel_spacing", &self.pixel_spacing)
             .field(
                 "pixel_pad",
                 &self.pixel_pad.map_or("None".to_string(), |v| v.to_string()),
@@ -369,6 +402,16 @@ impl PixelDataSliceInfo {
     }
 
     #[must_use]
+    pub fn slice_thickness(&self) -> f32 {
+        self.slice_thickness
+    }
+
+    #[must_use]
+    pub fn spacing_between_slices(&self) -> f32 {
+        self.spacing_between_slices
+    }
+
+    #[must_use]
     pub fn samples_per_pixel(&self) -> u16 {
         self.samples_per_pixel
     }
@@ -396,6 +439,11 @@ impl PixelDataSliceInfo {
     #[must_use]
     pub fn rows(&self) -> u16 {
         self.rows
+    }
+
+    #[must_use]
+    pub fn pixel_spacing(&self) -> (f32, f32) {
+        self.pixel_spacing
     }
 
     #[must_use]
@@ -467,14 +515,47 @@ impl PixelDataSliceInfo {
     }
 
     #[must_use]
-    pub fn take_bytes(&mut self) -> Vec<u8> {
-        std::mem::take(&mut self.pd_bytes)
+    pub fn stride(&self) -> usize {
+        if self.planar_config == 0 {
+            1
+        } else {
+            self.pd_bytes.len() / self.samples_per_pixel as usize
+        }
+    }
+
+    #[must_use]
+    pub fn is_rgb(&self) -> bool {
+        self.photo_interp.as_ref().is_some_and(PhotoInterp::is_rgb) && self.samples_per_pixel == 3
     }
 
     /// Whether the byte values in Pixel Data are signed or unsigned values.
     #[must_use]
     pub fn is_signed(&self) -> bool {
         self.pixel_rep != 0
+    }
+
+    #[must_use]
+    pub fn vol_dims(&self) -> VolDims {
+        let mut z_mm = 0f32;
+        if VolDims::is_valid_dim(self.spacing_between_slices) {
+            z_mm = self.spacing_between_slices;
+        } else if VolDims::is_valid_dim(self.slice_thickness) {
+            z_mm = self.slice_thickness;
+        }
+        VolDims::new(
+            self.rows,
+            self.cols,
+            // PixelSpacing first value is space between rows (y) and second value is space between
+            // columns (x).
+            self.pixel_spacing.1,
+            self.pixel_spacing.0,
+            z_mm,
+        )
+    }
+
+    #[must_use]
+    pub fn take_bytes(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.pd_bytes)
     }
 
     /// After all relevant elements have been parsed, this will validate the result of this
@@ -522,6 +603,26 @@ impl PixelDataSliceInfo {
             }
         }
 
+        // One of SliceThickness or SpacingBetweenSlices should be present/valid.
+        if !VolDims::is_valid_dim(self.slice_thickness)
+            && !VolDims::is_valid_dim(self.spacing_between_slices)
+        {
+            return Err(PixelDataError::InvalidDims(format!(
+                "SliceThickness and SpacingBetweenSlices are both invalid: {}, {}",
+                self.slice_thickness, self.spacing_between_slices
+            )));
+        }
+
+        // Both values from PixelSpacing must be valid.
+        if !VolDims::is_valid_dim(self.pixel_spacing.0)
+            || !VolDims::is_valid_dim(self.pixel_spacing.1)
+        {
+            return Err(PixelDataError::InvalidDims(format!(
+                "PixelSpacing is invalid: {:?}",
+                self.pixel_spacing
+            )));
+        }
+
         Ok(())
     }
 
@@ -545,8 +646,7 @@ impl PixelDataSliceInfo {
     /// - Reading byte/word values from the `PixelData` bytes.
     pub fn load_pixel_data(mut self) -> Result<PixelDataSlice, PixelDataError> {
         self.validate()?;
-        let is_rgb = self.photo_interp().is_some_and(PhotoInterp::is_rgb);
-        match (self.bits_alloc, is_rgb) {
+        match (self.bits_alloc, self.is_rgb()) {
             (BitsAlloc::Unsupported(val), _) => Err(PixelDataError::InvalidBitsAlloc(val)),
             (BitsAlloc::Eight, true) => {
                 Ok(PixelDataSlice::U8(PixelDataSliceU8::from_rgb_8bit(self)))

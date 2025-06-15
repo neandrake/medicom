@@ -33,8 +33,11 @@ pub enum PixelDataError {
     #[error("No Pixel Data bytes found")]
     MissingPixelData,
 
-    #[error("Invalid dimensions: {0}x{1}")]
+    #[error("Invalid size: {0}x{1}")]
     InvalidSize(u16, u16),
+
+    #[error("Invalid dimensions: {0}")]
+    InvalidDims(String),
 
     #[error("Invalid VR: {0:?}")]
     InvalidVR(VRRef),
@@ -47,6 +50,9 @@ pub enum PixelDataError {
 
     #[error("Invalid source location to interpret pixel data: {0}")]
     InvalidPixelSource(usize),
+
+    #[error("Slice format does not match others in volume. SOP: {0}, error: {1}")]
+    InconsistentSliceFormat(String, String),
 
     #[error("Error parsing DICOM")]
     ParseError {
