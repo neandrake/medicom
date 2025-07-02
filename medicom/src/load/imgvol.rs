@@ -16,12 +16,19 @@
 
 //! Loaded DICOM image volume datasets.
 
-use std::io::{BufReader, Read};
+use std::{
+    cmp::Ordering,
+    io::{BufReader, Read},
+};
 
 use crate::{
     core::{dcmobject::DicomRoot, read::ParserBuilder},
-    dict::{stdlookup::STANDARD_DICOM_DICTIONARY, tags::SOPInstanceUID},
-    load::pixeldata::{pdinfo::PixelDataSliceInfo, PixelDataError},
+    dict::stdlookup::STANDARD_DICOM_DICTIONARY,
+    load::pixeldata::{
+        pdinfo::PixelDataSliceInfo, pixel_i16::PixelDataSliceI16, pixel_i32::PixelDataSliceI32,
+        pixel_u16::PixelDataSliceU16, pixel_u32::PixelDataSliceU32, pixel_u8::PixelDataSliceU8,
+        BitsAlloc, PixelDataError,
+    },
 };
 
 #[derive(Debug)]
@@ -122,11 +129,28 @@ pub struct ImageVolume {
     slices: Vec<Vec<i16>>,
     infos: Vec<PixelDataSliceInfo>,
 
+    series_uid: String,
     dims: VolDims,
     stride: usize,
     is_rgb: bool,
     min_val: f64,
     max_val: f64,
+}
+
+impl Default for ImageVolume {
+    fn default() -> Self {
+        Self {
+            slices: Vec::new(),
+            infos: Vec::new(),
+
+            series_uid: String::new(),
+            dims: VolDims::default(),
+            stride: 0usize,
+            is_rgb: false,
+            min_val: f64::MAX,
+            max_val: f64::MIN,
+        }
+    }
 }
 
 impl ImageVolume {
@@ -155,12 +179,27 @@ impl ImageVolume {
         self.is_rgb
     }
 
+    #[must_use]
+    pub fn series_uid(&self) -> &String {
+        &self.series_uid
+    }
+
+    /// Loads a slice into this volume.
+    ///
+    /// # Errors
+    /// - `ParseError` any errors parsing the dataset.
+    /// - `PixelValueError` if the pixel values fail to parse into `i16`.
+    /// - `InconsistentSliceFormat` if the slice is not in the same format as other slices already
+    ///   loaded in to this volume.
     pub fn load_slice<R: Read>(&mut self, reader: R) -> Result<(), PixelDataError> {
         let dataset = BufReader::with_capacity(1024 * 1024, reader);
         let mut parser = ParserBuilder::default().build(dataset, &STANDARD_DICOM_DICTIONARY);
         let Some(dcmroot) = DicomRoot::parse(&mut parser)? else {
             return Err(PixelDataError::MissingPixelData);
         };
+
+        let sop_uid = dcmroot.sop_instance_id()?;
+        let series_uid = dcmroot.series_instance_id()?;
 
         let mut pdinfo = PixelDataSliceInfo::process(dcmroot);
         pdinfo.validate()?;
@@ -176,49 +215,84 @@ impl ImageVolume {
             self.dims = dims;
             self.stride = stride;
             self.is_rgb = is_rgb;
+            self.series_uid = series_uid;
         } else {
-            let sop = pdinfo
-                .dcmroot()
-                .get_value_by_tag(&SOPInstanceUID)
-                .and_then(|v| v.string().cloned())
-                .unwrap_or_else(|| "<NO SOP>".to_owned());
+            if series_uid != self.series_uid {
+                return Err(PixelDataError::InconsistentSliceFormat(
+                    sop_uid,
+                    format!(
+                        "SeriesInstanceUID mismatch, this: {series_uid}, other: {}",
+                        self.series_uid
+                    ),
+                ));
+            }
             if dims != self.dims {
                 return Err(PixelDataError::InconsistentSliceFormat(
-                    sop,
+                    sop_uid,
                     format!("Dimensions mismatch, this: {dims}, other: {}", self.dims),
                 ));
             }
-
             if stride != self.stride {
                 return Err(PixelDataError::InconsistentSliceFormat(
-                    sop,
+                    sop_uid,
                     format!("Stride mismatch, this: {stride}, other: {}", self.stride),
                 ));
             }
             if is_rgb != self.is_rgb {
                 return Err(PixelDataError::InconsistentSliceFormat(
-                    sop,
+                    sop_uid,
                     format!("RGB mismatch, this: {is_rgb}, other: {}", self.is_rgb),
                 ));
             }
         }
 
-        self.infos.push(pdinfo);
+        let loaded = Self::load_pixel_data(pdinfo)?;
+        let seek = &loaded.0;
+        match self.infos.binary_search_by(|i| Self::cmp_by_zpos(seek, i)) {
+            Err(loc) => {
+                self.infos.insert(loc, loaded.0);
+                self.slices.insert(loc, loaded.1);
+            }
+            Ok(_existing) => {
+                return Err(PixelDataError::InconsistentSliceFormat(
+                    loaded.0.sop_instance_id(),
+                    "Multiple slices in the same z-pos".to_owned(),
+                ))
+            }
+        }
 
         Ok(())
     }
-}
 
-impl Default for ImageVolume {
-    fn default() -> Self {
-        Self {
-            slices: Vec::new(),
-            infos: Vec::new(),
-            min_val: f64::MAX,
-            max_val: f64::MIN,
-            dims: VolDims::default(),
-            stride: 0usize,
-            is_rgb: false,
+    fn cmp_by_zpos(a: &PixelDataSliceInfo, b: &PixelDataSliceInfo) -> Ordering {
+        // The X and Y of image position are likely to be the same, unless it's something like
+        // a spinal MR acquisition.
+        let a_pos = a.image_pos()[2];
+        let b_pos = b.image_pos()[2];
+        if a_pos < b_pos {
+            Ordering::Less
+        } else if a_pos > b_pos {
+            Ordering::Greater
+        } else {
+            Ordering::Equal
+        }
+    }
+
+    fn load_pixel_data(
+        pdinfo: PixelDataSliceInfo,
+    ) -> Result<(PixelDataSliceInfo, Vec<i16>), PixelDataError> {
+        match (pdinfo.bits_alloc(), pdinfo.is_rgb()) {
+            (BitsAlloc::Unsupported(val), _) => Err(PixelDataError::InvalidBitsAlloc(*val)),
+            (BitsAlloc::Eight, true) => Ok(PixelDataSliceU8::from_rgb_8bit(pdinfo).into_i16()),
+            (BitsAlloc::Eight, false) => {
+                Ok(PixelDataSliceI16::from_mono_8bit(pdinfo).into_buffer())
+            }
+            (BitsAlloc::Sixteen, true) => PixelDataSliceU16::from_rgb_16bit(pdinfo)?.into_i16(),
+            (BitsAlloc::Sixteen, false) => {
+                Ok(PixelDataSliceI16::from_mono_16bit(pdinfo)?.into_buffer())
+            }
+            (BitsAlloc::ThirtyTwo, true) => PixelDataSliceU32::from_rgb_32bit(pdinfo)?.into_i16(),
+            (BitsAlloc::ThirtyTwo, false) => PixelDataSliceI32::from_mono_32bit(pdinfo)?.into_i16(),
         }
     }
 }

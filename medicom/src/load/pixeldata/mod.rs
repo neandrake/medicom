@@ -65,6 +65,12 @@ pub enum PixelDataError {
         #[from]
         source: std::array::TryFromSliceError,
     },
+
+    #[error("Value not within expected range")]
+    PixelValueError {
+        #[from]
+        source: std::num::TryFromIntError,
+    },
 }
 
 /// Supported values of Photometric Interpretation.

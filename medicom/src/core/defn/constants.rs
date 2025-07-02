@@ -25,6 +25,8 @@ pub mod tags {
     pub const SPECIFIC_CHARACTER_SET: u32 = 0x0008_0005;
     pub const SOP_INSTANCE_UID: u32 = 0x0008_0018;
 
+    pub const SERIES_INSTANCE_UID: u32 = 0x0020_000E;
+
     pub const FLOAT_PIXEL_DATA: u32 = 0x7FE0_0008;
     pub const DOUBLE_PIXEL_DATA: u32 = 0x7FE0_0009;
     pub const PIXEL_DATA: u32 = 0x7FE0_0010;

@@ -90,6 +90,25 @@ impl DicomRoot {
         self.cs
     }
 
+    /// Get the SOP Instance UID.
+    pub fn sop_instance_id(&self) -> Result<String, ParseError> {
+        self.get_value_by_tag(tags::SOP_INSTANCE_UID)
+            .and_then(|v| v.string().map(|s| s.to_owned()))
+            .ok_or_else(|| ParseError::InvalidTagPath {
+                string_path: "SOPInstanceUID".to_owned(),
+                details: "SOPInstanceUID is missing".to_owned(),
+            })
+    }
+
+    pub fn series_instance_id(&self) -> Result<String, ParseError> {
+        self.get_value_by_tag(tags::SERIES_INSTANCE_UID)
+            .and_then(|v| v.string().map(|s| s.to_owned()))
+            .ok_or_else(|| ParseError::InvalidTagPath {
+                string_path: "SeriesInstanceUID".to_owned(),
+                details: "SeriesInstanceUID is missing".to_owned(),
+            })
+    }
+
     /// The number of child nodes in this `DicomRoot`.
     #[must_use]
     pub fn get_child_count(&self) -> usize {

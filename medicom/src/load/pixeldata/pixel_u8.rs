@@ -74,6 +74,15 @@ impl PixelDataSliceU8 {
     }
 
     #[must_use]
+    pub fn into_i16(self) -> (PixelDataSliceInfo, Vec<i16>) {
+        let mut buffer: Vec<i16> = Vec::with_capacity(self.buffer().len());
+        for b in &self.buffer {
+            buffer.push(i16::from(*b));
+        }
+        (self.info, buffer)
+    }
+
+    #[must_use]
     pub fn info(&self) -> &PixelDataSliceInfo {
         &self.info
     }

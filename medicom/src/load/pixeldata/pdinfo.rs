@@ -79,6 +79,14 @@ impl PixelDataSliceInfo {
         &self.image_pos
     }
 
+    #[must_use]
+    pub fn sop_instance_id(&self) -> String {
+        self.dcmroot
+            .get_value_by_tag(&tags::SOPInstanceUID)
+            .and_then(|v| v.string().map(|s| s.to_owned()))
+            .unwrap_or_else(|| "<NO SOP INSTANCE UID>".to_string())
+    }
+
     #[allow(clippy::too_many_lines)] // No great way to shrink this down.
     #[must_use]
     pub(crate) fn process(dcmroot: DicomRoot) -> Self {

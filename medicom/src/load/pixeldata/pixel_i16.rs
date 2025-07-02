@@ -221,8 +221,9 @@ impl PixelDataSliceI16 {
     }
 
     #[must_use]
-    pub fn into_buffer(self) -> Vec<i16> {
-        self.buffer
+    pub fn into_buffer(mut self) -> (PixelDataSliceInfo, Vec<i16>) {
+        let buffer = std::mem::take(&mut self.buffer);
+        (self.info, buffer)
     }
 
     #[must_use]
