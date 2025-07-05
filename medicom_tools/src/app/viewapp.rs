@@ -23,22 +23,17 @@ use egui::{
     mutex::Mutex,
     ColorImage, Margin, SizeHint,
 };
-use medicom::load::pixeldata::{
-    pdinfo::PixelDataSliceInfo, pdslice::PixelDataSlice, pdwinlevel::WindowLevel,
-};
+use medicom::load::{imgvol::ImageVolume, pixeldata::pdwinlevel::WindowLevel};
 use std::{
-    cmp::Ordering,
     collections::{HashMap, HashSet},
+    fs::File,
+    io::BufReader,
     path::{Path, PathBuf},
     sync::Arc,
     thread,
 };
 
-use crate::{
-    app::{extractapp::ExtractApp, parse_file},
-    args::ViewArgs,
-    CommandApplication,
-};
+use crate::{args::ViewArgs, CommandApplication};
 
 pub struct ViewApp {
     args: ViewArgs,
@@ -56,49 +51,108 @@ impl CommandApplication for ViewApp {
     }
 }
 
-#[derive(PartialEq, Eq, Hash)]
-struct DicomUri {
-    path: String,
+#[derive(PartialEq, Eq, Hash, Debug)]
+struct SliceKey {
+    series: SeriesKey,
+    slice_index: usize,
 }
 
-impl DicomUri {}
+impl From<&str> for SliceKey {
+    fn from(value: &str) -> Self {
+        let mut slice_index = 0usize;
+        let mut series_uid = value;
+        if let Some(lindex) = value.find('[') {
+            series_uid = &value[0..lindex];
+            if let Some(rindex) = value.rfind(']') {
+                let slice = &value[lindex..rindex];
+                slice_index = slice.parse::<usize>().unwrap_or_default();
+            }
+        }
+        Self {
+            series: SeriesKey::from(series_uid),
+            slice_index,
+        }
+    }
+}
 
-impl From<&str> for DicomUri {
+impl From<(&str, usize)> for SliceKey {
+    fn from(value: (&str, usize)) -> Self {
+        Self {
+            series: SeriesKey::from(value.0),
+            slice_index: value.1,
+        }
+    }
+}
+
+impl From<(&SeriesKey, usize)> for SliceKey {
+    fn from(value: (&SeriesKey, usize)) -> Self {
+        Self {
+            series: value.0.clone(),
+            slice_index: value.1,
+        }
+    }
+}
+
+impl std::fmt::Display for SliceKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}[{}]", self.series, self.slice_index)
+    }
+}
+
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
+struct SeriesKey {
+    series_uid: String,
+}
+
+impl From<&str> for SeriesKey {
     fn from(value: &str) -> Self {
         Self {
-            path: value.trim_start_matches("dicom://").to_string(),
+            series_uid: value.to_string(),
         }
     }
 }
 
-impl From<&Path> for DicomUri {
+impl From<&String> for SeriesKey {
+    fn from(value: &String) -> Self {
+        SeriesKey::from(value.as_str())
+    }
+}
+
+impl From<String> for SeriesKey {
+    fn from(value: String) -> Self {
+        Self { series_uid: value }
+    }
+}
+
+impl From<&Path> for SeriesKey {
     fn from(value: &Path) -> Self {
         Self {
-            path: value.display().to_string(),
+            series_uid: value.display().to_string(),
         }
     }
 }
 
-impl From<&PathBuf> for DicomUri {
+impl From<&PathBuf> for SeriesKey {
     fn from(value: &PathBuf) -> Self {
-        DicomUri::from(value.as_path())
+        SeriesKey::from(value.as_path())
     }
 }
 
-struct LoadedSlice {
-    file: PathBuf,
-    slice_info: PixelDataSlice,
-    image: Arc<ColorImage>,
+impl std::fmt::Display for SeriesKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.series_uid)
+    }
 }
 
 #[derive(Default)]
 struct DicomFileImageLoader {
-    cache: Mutex<HashMap<DicomUri, LoadedSlice>>,
-    failed: Mutex<HashSet<DicomUri>>,
+    vol_cache: Mutex<HashMap<SeriesKey, ImageVolume>>,
+    image_cache: Mutex<HashMap<SliceKey, Arc<ColorImage>>>,
+    failed: Mutex<HashSet<PathBuf>>,
 }
 
 impl DicomFileImageLoader {
-    fn load_files(&self, files: &Arc<Mutex<Vec<PathBuf>>>) {
+    fn load_files(&self, files: &Arc<Mutex<Vec<PathBuf>>>) -> Result<()> {
         // Create a copy of the files list so the files list lock does not need to be held while
         // every file is loaded.
         let files_copy: Vec<PathBuf>;
@@ -108,136 +162,61 @@ impl DicomFileImageLoader {
             drop(guard);
         }
 
+        let mut imgvol = ImageVolume::default();
+
         // Load all files.
-        for file in &files_copy {
-            if let Err(e) = self.load_dicom_file(file) {
-                self.failed.lock().insert(DicomUri::from(file));
-                eprintln!("Failed to load: {e:?}");
+        for path in &files_copy {
+            let file = match File::open(path) {
+                Err(e) => {
+                    self.failed.lock().insert(path.to_owned());
+                    eprintln!("Failed to open file: {path:?}: {e:?}");
+                    return Err(anyhow!(e));
+                }
+                Ok(file) => file,
+            };
+            let dataset = BufReader::with_capacity(1024 * 1024, file);
+            if let Err(e) = imgvol.load_slice(dataset) {
+                self.failed.lock().insert(path.to_owned());
+                eprintln!("Failed to load {path:?}: {e:?}");
             }
         }
 
-        // Create a sorted list of the slices and map back to their files, resulting in sorting the
-        // files by image position.
-        let mut slices: Vec<&LoadedSlice> = Vec::with_capacity(files_copy.len());
-        let cache = self.cache.lock();
-        for slice in cache.values() {
-            slices.push(slice);
-        }
-        slices.sort_by(|a, b| {
-            // The X and Y of image position are likely to be the same, unless it's something like
-            // a spinal MR acquisition.
-            let a_pos = a.slice_info.info().image_pos()[2];
-            let b_pos = b.slice_info.info().image_pos()[2];
-            if a_pos < b_pos {
-                Ordering::Less
-            } else if a_pos > b_pos {
-                Ordering::Greater
-            } else {
-                Ordering::Equal
-            }
-        });
+        let series_uri = SeriesKey::from(imgvol.series_uid());
 
-        // Clear the input files list populate from the files sorted by position.
-        let mut files = files.lock();
-        files.clear();
-        files.extend(slices.iter().map(|s| s.file.clone()));
-    }
-
-    fn load_dicom_file(&self, file: &Path) -> Result<()> {
-        let parser = parse_file(file, true)?;
-
-        if ExtractApp::is_jpeg(parser.ts()) {
-            return Err(anyhow!(
-                "Unsupported TransferSyntax: {}",
-                parser.ts().uid().name()
-            ));
+        let mut image_lock = self.image_cache.lock();
+        for idx in 0..imgvol.slices().len() {
+            let image = self.to_image(&imgvol, idx);
+            let key = SliceKey::from((&series_uri, idx));
+            image_lock.insert(key, Arc::new(image));
         }
 
-        let pixdata_info = PixelDataSliceInfo::process_dcm_parser(parser)?;
-        let slice_info = pixdata_info.load_pixel_data()?;
-        //dbg!(&pixdata_buffer);
-
-        match slice_info {
-            PixelDataSlice::U8(pdslice) => {
-                let width = pdslice.info().rows().into();
-                let height = pdslice.info().cols().into();
-                let image = ColorImage::from_rgb([width, height], pdslice.buffer());
-                let entry = LoadedSlice {
-                    file: file.to_path_buf(),
-                    slice_info: PixelDataSlice::U8(pdslice),
-                    image: Arc::new(image),
-                };
-                self.cache.lock().insert(DicomUri::from(file), entry);
-            }
-            PixelDataSlice::U16(pdslice) => {
-                // WindowLevel to map i16 values into u8.
-                let win = WindowLevel::new(
-                    String::new(),
-                    f64::from(i16::MAX) / 2_f64,
-                    f64::from(i16::MAX),
-                    f64::from(u8::MIN),
-                    f64::from(u8::MAX),
-                );
-                let width = pdslice.info().rows().into();
-                let height = pdslice.info().cols().into();
-
-                let iter = pdslice.pixel_iter_with_win(win).map(|p| p.r as u8);
-                let image = ColorImage::from_gray_iter([width, height], iter);
-                let entry = LoadedSlice {
-                    file: file.to_path_buf(),
-                    slice_info: PixelDataSlice::U16(pdslice),
-                    image: Arc::new(image),
-                };
-                self.cache.lock().insert(DicomUri::from(file), entry);
-            }
-            PixelDataSlice::I16(pdslice) => {
-                // WindowLevel to map i16 values into u8.
-                let win = pdslice.info().win_levels().last().map_or_else(
-                    || {
-                        WindowLevel::new(
-                            String::new(),
-                            0_f64,
-                            f64::from(i16::MAX),
-                            f64::from(u8::MIN),
-                            f64::from(u8::MAX),
-                        )
-                    },
-                    |w| {
-                        WindowLevel::new(
-                            w.name().to_string(),
-                            pdslice.rescale(w.center()),
-                            pdslice.rescale(w.width()),
-                            f64::from(u8::MIN),
-                            f64::from(u8::MAX),
-                        )
-                    },
-                );
-                let width = pdslice.info().rows().into();
-                let height = pdslice.info().cols().into();
-
-                let iter = pdslice.pixel_iter_with_win(win).map(|p| p.r as u8);
-                let image = ColorImage::from_gray_iter([width, height], iter);
-                let entry = LoadedSlice {
-                    file: file.to_path_buf(),
-                    slice_info: PixelDataSlice::I16(pdslice),
-                    image: Arc::new(image),
-                };
-                self.cache.lock().insert(DicomUri::from(file), entry);
-            }
-            other => {
-                return Err(anyhow!("Unsupported PixelData: {other:?}"));
-            }
-        }
+        self.vol_cache.lock().insert(series_uri, imgvol);
 
         Ok(())
     }
 
-    fn is_loaded(&self, uri: &DicomUri) -> bool {
-        self.cache.lock().contains_key(uri)
+    fn is_loaded(&self, uri: &SeriesKey) -> bool {
+        self.vol_cache.lock().contains_key(uri)
     }
 
-    fn is_failed(&self, uri: &DicomUri) -> bool {
-        self.failed.lock().contains(uri)
+    fn is_failed(&self, file: &PathBuf) -> bool {
+        self.failed.lock().contains(file)
+    }
+
+    fn to_image(&self, imgvol: &ImageVolume, slice_index: usize) -> ColorImage {
+        // WindowLevel to map i16 values into u8.
+        let win = WindowLevel::new(
+            String::new(),
+            f64::from(i16::MAX) / 2_f64,
+            f64::from(i16::MAX),
+            f64::from(u8::MIN),
+            f64::from(u8::MAX),
+        );
+        let width = imgvol.dims().rows().into();
+        let height = imgvol.dims().cols().into();
+
+        let iter = imgvol.slice_iter(slice_index, win).map(|p| p.r as u8);
+        ColorImage::from_gray_iter([width, height], iter)
     }
 }
 
@@ -247,35 +226,35 @@ impl ImageLoader for DicomFileImageLoader {
     }
 
     fn load(&self, _ctx: &egui::Context, uri: &str, _: SizeHint) -> egui::load::ImageLoadResult {
-        let cache = self.cache.lock();
-        if let Some(loaded_slice) = cache.get(&DicomUri::from(uri)) {
+        let mut cache = self.image_cache.lock();
+        let slice_key = SliceKey::from(uri);
+        if let Some(loaded_slice) = cache.get(&slice_key) {
             Ok(ImagePoll::Ready {
-                image: loaded_slice.image.clone(),
+                image: loaded_slice.clone(),
             })
         } else {
-            // Must release the lock used to check the cache before it can be used in
-            // load_dicom_file, otherwise this inflicts a deadlock.
-            drop(cache);
-            let uri = DicomUri::from(uri).path;
-            self.load_dicom_file(&PathBuf::from(uri))
-                .map_err(|e| LoadError::Loading(format!("{e:?}")))?;
+            if let Some(imgvol) = self.vol_cache.lock().get(&slice_key.series) {
+                let image = self.to_image(imgvol, slice_key.slice_index);
+                cache.insert(slice_key, Arc::new(image));
+            }
+
             Err(LoadError::NotSupported)
         }
     }
 
     fn forget(&self, uri: &str) {
-        self.cache.lock().remove(&DicomUri::from(uri));
+        self.vol_cache.lock().remove(&SeriesKey::from(uri));
     }
 
     fn forget_all(&self) {
-        self.cache.lock().clear();
+        self.vol_cache.lock().clear();
     }
 
     fn byte_size(&self) -> usize {
-        self.cache
+        self.vol_cache
             .lock()
             .values()
-            .map(|slice| slice.image.as_raw().len())
+            .map(ImageVolume::byte_size)
             .sum()
     }
 }
@@ -311,7 +290,9 @@ impl ImageViewer {
         let image_files_for_loading = image_files.clone();
         let loader_for_loading = loader.clone();
         thread::spawn(move || {
-            loader_for_loading.load_files(&image_files_for_loading);
+            if let Err(e) = loader_for_loading.load_files(&image_files_for_loading) {
+                eprintln!("Error loading: {e:?}");
+            }
         });
 
         let loader_for_self = loader.clone();
@@ -345,12 +326,16 @@ impl ImageViewer {
         image_loader: &Arc<DicomFileImageLoader>,
     ) -> egui::ProgressBar {
         // Remove non-DICOM files from the list, and do not count for progress.
-        image_files.retain(|f| !image_loader.is_failed(&DicomUri::from(f)));
+        image_files.retain(|f| !image_loader.is_failed(f));
         let mut loaded_count: usize = 0;
         for file in image_files.iter() {
-            if image_loader.is_loaded(&DicomUri::from(file)) {
+            if image_loader.is_loaded(&SeriesKey::from(file)) {
                 loaded_count += 1;
             }
+        }
+
+        if image_files.is_empty() {
+            return egui::ProgressBar::new(1f32).text("Failed to load any images");
         }
 
         // Unlikely precision loss since number of files would at max be up in the thousands.
@@ -416,9 +401,12 @@ impl eframe::App for ImageViewer {
                 self.current_image += 1;
             }
 
-            // Render the current image.
-            let cur_image_uri = format!("dicom://{}", image_files[self.current_image].display());
-            ui.add(egui::Image::from_uri(cur_image_uri));
+            let img_vol_cache_lock = self.image_loader.vol_cache.lock();
+
+            if let Some(series_key) = img_vol_cache_lock.keys().next() {
+                let slice_key = SliceKey::from((series_key, self.current_image));
+                ui.add(egui::Image::from_uri(slice_key.to_string()));
+            }
         });
     }
 }

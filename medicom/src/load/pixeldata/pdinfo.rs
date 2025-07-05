@@ -124,16 +124,16 @@ impl PixelDataSliceInfo {
         if let Some(val) = pdinfo
             .dcmroot()
             .get_value_by_tag(&tags::SliceThickness)
-            .and_then(|v| v.float())
+            .and_then(|v| v.double())
         {
-            pdinfo.slice_thickness = val;
+            pdinfo.slice_thickness = val as f32;
         }
         if let Some(val) = pdinfo
             .dcmroot()
             .get_value_by_tag(&tags::SpacingBetweenSlices)
-            .and_then(|v| v.float())
+            .and_then(|v| v.double())
         {
-            pdinfo.spacing_between_slices = val;
+            pdinfo.spacing_between_slices = val as f32;
         }
         if let Some(val) = pdinfo
             .dcmroot()
@@ -177,10 +177,10 @@ impl PixelDataSliceInfo {
         {
             pdinfo.cols = val;
         }
-        if let Some(RawValue::Floats(val)) = pdinfo.dcmroot().get_value_by_tag(&tags::PixelSpacing)
+        if let Some(RawValue::Doubles(val)) = pdinfo.dcmroot().get_value_by_tag(&tags::PixelSpacing)
         {
             if val.len() == 2 {
-                pdinfo.pixel_spacing = (val[0], val[1]);
+                pdinfo.pixel_spacing = (val[0] as f32, val[1] as f32);
             }
         }
         if let Some(val) = pdinfo

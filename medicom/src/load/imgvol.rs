@@ -25,9 +25,10 @@ use crate::{
     core::{dcmobject::DicomRoot, read::ParserBuilder},
     dict::stdlookup::STANDARD_DICOM_DICTIONARY,
     load::pixeldata::{
-        pdinfo::PixelDataSliceInfo, pixel_i16::PixelDataSliceI16, pixel_i32::PixelDataSliceI32,
-        pixel_u16::PixelDataSliceU16, pixel_u32::PixelDataSliceU32, pixel_u8::PixelDataSliceU8,
-        BitsAlloc, PixelDataError,
+        pdinfo::PixelDataSliceInfo, pdwinlevel::WindowLevel, pixel_i16::PixelDataSliceI16,
+        pixel_i16::PixelI16, pixel_i32::PixelDataSliceI32, pixel_u16::PixelDataSliceU16,
+        pixel_u32::PixelDataSliceU32, pixel_u8::PixelDataSliceU8, BitsAlloc, PhotoInterp,
+        PixelDataError,
     },
 };
 
@@ -133,6 +134,10 @@ pub struct ImageVolume {
     dims: VolDims,
     stride: usize,
     is_rgb: bool,
+    slope: f64,
+    intercept: f64,
+    samples_per_pixel: usize,
+    photo_interp: PhotoInterp,
     min_val: f64,
     max_val: f64,
 }
@@ -147,6 +152,10 @@ impl Default for ImageVolume {
             dims: VolDims::default(),
             stride: 0usize,
             is_rgb: false,
+            slope: 1f64,
+            intercept: 0f64,
+            samples_per_pixel: 0usize,
+            photo_interp: PhotoInterp::Unsupported("Unspecified".to_owned()),
             min_val: f64::MAX,
             max_val: f64::MIN,
         }
@@ -184,6 +193,11 @@ impl ImageVolume {
         &self.series_uid
     }
 
+    #[must_use]
+    pub fn byte_size(&self) -> usize {
+        self.slices().iter().flatten().count() * std::mem::size_of::<i16>()
+    }
+
     /// Loads a slice into this volume.
     ///
     /// # Errors
@@ -210,12 +224,18 @@ impl ImageVolume {
         let dims = pdinfo.vol_dims();
         let stride = pdinfo.stride();
         let is_rgb = pdinfo.is_rgb();
+        let slope = pdinfo.slope().unwrap_or(1f64);
+        let intercept = pdinfo.slope().unwrap_or(0f64);
+        let samples_per_pixel = usize::from(pdinfo.samples_per_pixel());
 
         if self.infos.is_empty() {
+            self.series_uid = series_uid;
             self.dims = dims;
             self.stride = stride;
             self.is_rgb = is_rgb;
-            self.series_uid = series_uid;
+            self.slope = slope;
+            self.intercept = intercept;
+            self.samples_per_pixel = samples_per_pixel;
         } else {
             if series_uid != self.series_uid {
                 return Err(PixelDataError::InconsistentSliceFormat(
@@ -242,6 +262,27 @@ impl ImageVolume {
                 return Err(PixelDataError::InconsistentSliceFormat(
                     sop_uid,
                     format!("RGB mismatch, this: {is_rgb}, other: {}", self.is_rgb),
+                ));
+            }
+            if slope != self.slope {
+                return Err(PixelDataError::InconsistentSliceFormat(
+                    sop_uid,
+                    format!("Slope mismatch: {slope}, other: {}", self.slope),
+                ));
+            }
+            if intercept != self.intercept {
+                return Err(PixelDataError::InconsistentSliceFormat(
+                    sop_uid,
+                    format!("Intercept mismatch: {intercept}, other: {}", self.intercept),
+                ));
+            }
+            if samples_per_pixel != self.samples_per_pixel {
+                return Err(PixelDataError::InconsistentSliceFormat(
+                    sop_uid,
+                    format!(
+                        "Samples per Pixel mismatch: {samples_per_pixel}, other: {}",
+                        self.samples_per_pixel
+                    ),
                 ));
             }
         }
@@ -294,5 +335,91 @@ impl ImageVolume {
             (BitsAlloc::ThirtyTwo, true) => PixelDataSliceU32::from_rgb_32bit(pdinfo)?.into_i16(),
             (BitsAlloc::ThirtyTwo, false) => PixelDataSliceI32::from_mono_32bit(pdinfo)?.into_i16(),
         }
+    }
+
+    /// Gets the pixel at the given x,y coordinate.
+    ///
+    /// # Errors
+    /// - If the x,y coordinate is invalid, either by being outside the image dimensions, or if the
+    ///   Planar Configuration and Samples per Pixel are set up such that beginning of RGB values
+    ///   must occur at specific indices.
+    #[allow(clippy::many_single_char_names)]
+    pub fn get_pixel(
+        &self,
+        x: usize,
+        y: usize,
+        z: usize,
+        winlevel: &WindowLevel,
+    ) -> Result<PixelI16, PixelDataError> {
+        let Some(buffer) = self.slices().get(z) else {
+            return Err(PixelDataError::InvalidDims(format!("Invalid z-pos: {z}")));
+        };
+        let cols = usize::from(self.dims().cols());
+        let rows = usize::from(self.dims().rows());
+        let stride = self.stride();
+
+        let src_byte_index = x + y * cols + z * (rows * cols);
+        let src_byte_index = src_byte_index * self.samples_per_pixel;
+        if src_byte_index >= buffer.len()
+            || (self.is_rgb && src_byte_index + stride * 2 >= buffer.len())
+        {
+            return Err(PixelDataError::InvalidPixelSource(src_byte_index));
+        }
+
+        let (r, g, b) = if self.is_rgb {
+            let red = buffer[src_byte_index];
+            let green = buffer[src_byte_index + stride];
+            let blue = buffer[src_byte_index + stride * 2];
+            (red, green, blue)
+        } else {
+            // TODO: How to make this more composable, that can be configured via a custom
+            //       iterator? E.g. apply rescale, then window/level, then colortable.
+            let applied_val = buffer
+                .get(src_byte_index)
+                .copied()
+                .map(f64::from)
+                .map(|v| v * self.slope + self.intercept)
+                .map(|v| winlevel.apply(v) as i16)
+                .unwrap_or_default();
+            let val = if self.photo_interp == PhotoInterp::Monochrome1 {
+                !applied_val
+            } else {
+                applied_val
+            };
+            (val, val, val)
+        };
+
+        Ok(PixelI16 { x, y, z, r, g, b })
+    }
+
+    pub fn slice_iter(&self, z: usize, winlevel: WindowLevel) -> ImageVolumeSliceIter {
+        ImageVolumeSliceIter {
+            vol: self,
+            z,
+            winlevel,
+            src_byte_index: 0,
+        }
+    }
+}
+
+pub struct ImageVolumeSliceIter<'buf> {
+    vol: &'buf ImageVolume,
+    z: usize,
+    winlevel: WindowLevel,
+    src_byte_index: usize,
+}
+
+impl Iterator for ImageVolumeSliceIter<'_> {
+    type Item = PixelI16;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let cols = usize::from(self.vol.dims().cols());
+        let rows = usize::from(self.vol.dims().rows());
+        let x = self.src_byte_index % cols;
+        let y = (self.src_byte_index / cols) % rows;
+        println!("Getting pixel for {x}, {y}, {}", self.z);
+        let pixel = self.vol.get_pixel(x, y, self.z, &self.winlevel);
+        self.src_byte_index += 1;
+        pixel.ok()
     }
 }
