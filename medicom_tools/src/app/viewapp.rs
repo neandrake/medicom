@@ -64,7 +64,7 @@ impl From<&str> for SliceKey {
         if let Some(lindex) = value.find('[') {
             series_uid = &value[0..lindex];
             if let Some(rindex) = value.rfind(']') {
-                let slice = &value[lindex..rindex];
+                let slice = &value[lindex + 1..rindex];
                 slice_index = slice.parse::<usize>().unwrap_or_default();
             }
         }
@@ -205,10 +205,12 @@ impl DicomFileImageLoader {
 
     fn to_image(&self, imgvol: &ImageVolume, slice_index: usize) -> ColorImage {
         // WindowLevel to map i16 values into u8.
+        let width = imgvol.max_val() - imgvol.min_val();
+        let center = width / 2f64;
         let win = WindowLevel::new(
             String::new(),
-            f64::from(i16::MAX) / 2_f64,
-            f64::from(i16::MAX),
+            center,
+            width,
             f64::from(u8::MIN),
             f64::from(u8::MAX),
         );

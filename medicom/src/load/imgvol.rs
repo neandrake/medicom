@@ -198,6 +198,16 @@ impl ImageVolume {
         self.slices().iter().flatten().count() * std::mem::size_of::<i16>()
     }
 
+    #[must_use]
+    pub fn min_val(&self) -> f64 {
+        self.min_val
+    }
+
+    #[must_use]
+    pub fn max_val(&self) -> f64 {
+        self.max_val
+    }
+
     /// Loads a slice into this volume.
     ///
     /// # Errors
@@ -355,10 +365,9 @@ impl ImageVolume {
             return Err(PixelDataError::InvalidDims(format!("Invalid z-pos: {z}")));
         };
         let cols = usize::from(self.dims().cols());
-        let rows = usize::from(self.dims().rows());
         let stride = self.stride();
 
-        let src_byte_index = x + y * cols + z * (rows * cols);
+        let src_byte_index = x + y * cols;
         let src_byte_index = src_byte_index * self.samples_per_pixel;
         if src_byte_index >= buffer.len()
             || (self.is_rgb && src_byte_index + stride * 2 >= buffer.len())
@@ -415,9 +424,11 @@ impl Iterator for ImageVolumeSliceIter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         let cols = usize::from(self.vol.dims().cols());
         let rows = usize::from(self.vol.dims().rows());
+        if self.src_byte_index >= rows * cols {
+            return None;
+        }
         let x = self.src_byte_index % cols;
-        let y = (self.src_byte_index / cols) % rows;
-        println!("Getting pixel for {x}, {y}, {}", self.z);
+        let y = self.src_byte_index / cols;
         let pixel = self.vol.get_pixel(x, y, self.z, &self.winlevel);
         self.src_byte_index += 1;
         pixel.ok()
