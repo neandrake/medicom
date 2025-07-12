@@ -16,15 +16,10 @@
 
 //! Loaded DICOM image volume datasets.
 
-use core::f64;
-use std::{
-    cmp::Ordering,
-    io::{BufReader, Read},
-};
+use std::cmp::Ordering;
 
 use crate::{
-    core::{dcmobject::DicomRoot, read::ParserBuilder},
-    dict::stdlookup::STANDARD_DICOM_DICTIONARY,
+    core::dcmobject::DicomRoot,
     load::pixeldata::{
         pdinfo::PixelDataSliceInfo, pdwinlevel::WindowLevel, pixel_i16::PixelDataSliceI16,
         pixel_i32::PixelDataSliceI32, pixel_u16::PixelDataSliceU16, pixel_u32::PixelDataSliceU32,
@@ -240,13 +235,7 @@ impl ImageVolume {
     /// - `PixelValueError` if the pixel values fail to parse into `i16`.
     /// - `InconsistentSliceFormat` if the slice is not in the same format as other slices already
     ///   loaded in to this volume.
-    pub fn load_slice<R: Read>(&mut self, reader: R) -> Result<(), PixelDataError> {
-        let dataset = BufReader::with_capacity(1024 * 1024, reader);
-        let mut parser = ParserBuilder::default().build(dataset, &STANDARD_DICOM_DICTIONARY);
-        let Some(dcmroot) = DicomRoot::parse(&mut parser)? else {
-            return Err(PixelDataError::MissingPixelData);
-        };
-
+    pub fn load_slice(&mut self, dcmroot: DicomRoot) -> Result<(), PixelDataError> {
         let sop_uid = dcmroot.sop_instance_id()?;
         let series_uid = dcmroot.series_instance_id()?;
 

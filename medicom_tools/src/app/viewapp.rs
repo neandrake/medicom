@@ -21,9 +21,16 @@ use egui::{
     generate_loader_id,
     load::{ImageLoader, ImagePoll, LoadError},
     mutex::Mutex,
-    ColorImage, Margin, SizeHint,
+    ColorImage, Context, Margin, SizeHint,
 };
-use medicom::load::{imgvol::ImageVolume, pixeldata::pdwinlevel::WindowLevel};
+use medicom::{
+    core::{dcmobject::DicomRoot, read::ParserBuilder},
+    dict::stdlookup::STANDARD_DICOM_DICTIONARY,
+    load::{
+        imgvol::ImageVolume,
+        pixeldata::{pdwinlevel::WindowLevel, PixelDataError},
+    },
+};
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
@@ -51,7 +58,7 @@ impl CommandApplication for ViewApp {
     }
 }
 
-#[derive(PartialEq, Eq, Hash, Debug)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 struct SliceKey {
     series: SeriesKey,
     slice_index: usize,
@@ -152,7 +159,7 @@ struct DicomFileImageLoader {
 }
 
 impl DicomFileImageLoader {
-    fn load_files(&self, files: &Arc<Mutex<Vec<PathBuf>>>) -> Result<()> {
+    fn load_files(&self, ctx: Context, files: &Arc<Mutex<Vec<PathBuf>>>) -> Result<()> {
         // Create a copy of the files list so the files list lock does not need to be held while
         // every file is loaded.
         let files_copy: Vec<PathBuf>;
@@ -161,8 +168,6 @@ impl DicomFileImageLoader {
             files_copy = guard.iter().cloned().collect();
             drop(guard);
         }
-
-        let mut imgvol = ImageVolume::default();
 
         // Load all files.
         for path in &files_copy {
@@ -174,33 +179,57 @@ impl DicomFileImageLoader {
                 }
                 Ok(file) => file,
             };
+
             let dataset = BufReader::with_capacity(1024 * 1024, file);
-            if let Err(e) = imgvol.load_slice(dataset) {
+            let mut parser = ParserBuilder::default().build(dataset, &STANDARD_DICOM_DICTIONARY);
+            let Some(dcmroot) = DicomRoot::parse(&mut parser)? else {
+                self.failed.lock().insert(path.to_owned());
+                eprintln!(
+                    "Failed to load {path:?}, {:?}",
+                    PixelDataError::MissingPixelData
+                );
+                ctx.request_repaint();
+                continue;
+            };
+
+            let series_key = SeriesKey::from(
+                dcmroot
+                    .series_instance_id()
+                    .unwrap_or_else(|_| "<NO SERIES UID>".to_owned()),
+            );
+
+            let mut vol_cache = self.vol_cache.lock();
+            let imgvol = vol_cache.entry(series_key).or_default();
+
+            if let Err(e) = imgvol.load_slice(dcmroot) {
                 self.failed.lock().insert(path.to_owned());
                 eprintln!("Failed to load {path:?}: {e:?}");
             }
+            ctx.request_repaint();
         }
 
-        let series_uri = SeriesKey::from(imgvol.series_uid());
-
-        let mut image_lock = self.image_cache.lock();
-        for idx in 0..imgvol.slices().len() {
-            let image = self.to_image(&imgvol, idx);
-            let key = SliceKey::from((&series_uri, idx));
-            image_lock.insert(key, Arc::new(image));
+        // Convert to images only after the full volume has been loaded. Necessary so the proper
+        // min/max are computed for window/level.
+        let vol_cache = self.vol_cache.lock();
+        let mut image_cache = self.image_cache.lock();
+        for imgvol in vol_cache.values() {
+            for idx in 0..imgvol.slices().len() {
+                let key = SliceKey::from((imgvol.series_uid().as_str(), idx));
+                image_cache
+                    .entry(key)
+                    .or_insert_with(|| Arc::new(self.to_image(imgvol, idx)));
+            }
         }
-
-        self.vol_cache.lock().insert(series_uri, imgvol);
 
         Ok(())
     }
 
-    fn is_loaded(&self, uri: &SeriesKey) -> bool {
-        self.vol_cache.lock().contains_key(uri)
-    }
-
-    fn is_failed(&self, file: &PathBuf) -> bool {
-        self.failed.lock().contains(file)
+    fn num_slices_loaded(&self, uri: &SeriesKey) -> usize {
+        if let Some(vol) = self.vol_cache.lock().get(uri) {
+            vol.slices().len()
+        } else {
+            0
+        }
     }
 
     fn to_image(&self, imgvol: &ImageVolume, slice_index: usize) -> ColorImage {
@@ -238,8 +267,12 @@ impl ImageLoader for DicomFileImageLoader {
             })
         } else {
             if let Some(imgvol) = self.vol_cache.lock().get(&slice_key.series) {
-                let image = self.to_image(imgvol, slice_key.slice_index);
-                cache.insert(slice_key, Arc::new(image));
+                if slice_key.slice_index < imgvol.slices().len() {
+                    let image = self.to_image(imgvol, slice_key.slice_index);
+                    let image = Arc::new(image);
+                    cache.insert(slice_key, image.clone());
+                    return Ok(ImagePoll::Ready { image });
+                }
             }
 
             Err(LoadError::NotSupported)
@@ -293,8 +326,9 @@ impl ImageViewer {
         let image_files = Arc::new(Mutex::new(image_files));
         let image_files_for_loading = image_files.clone();
         let loader_for_loading = loader.clone();
+        let ctx = cc.egui_ctx.clone();
         thread::spawn(move || {
-            if let Err(e) = loader_for_loading.load_files(&image_files_for_loading) {
+            if let Err(e) = loader_for_loading.load_files(ctx, &image_files_for_loading) {
                 eprintln!("Error loading: {e:?}");
             }
         });
@@ -326,35 +360,28 @@ impl ImageViewer {
     }
 
     fn create_progress(
-        image_files: &mut Vec<PathBuf>,
+        series_key: &SeriesKey,
+        total: usize,
         image_loader: &Arc<DicomFileImageLoader>,
     ) -> egui::ProgressBar {
-        // Remove non-DICOM files from the list, and do not count for progress.
-        image_files.retain(|f| !image_loader.is_failed(f));
-        let mut loaded_count: usize = 0;
-        for file in image_files.iter() {
-            if image_loader.is_loaded(&SeriesKey::from(file)) {
-                loaded_count += 1;
-            }
-        }
-
-        if image_files.is_empty() {
+        if total == 0 {
             return egui::ProgressBar::new(1f32).text("Failed to load any images");
         }
 
+        let loaded_count = image_loader.num_slices_loaded(series_key);
         // Unlikely precision loss since number of files would at max be up in the thousands.
         // Additionally, for reporting progress any loss of precision is fine.
-        #[allow(clippy::cast_precision_loss)]
-        let progress = (loaded_count / image_files.len()) as f32;
-        if progress < 1_f32 {
-            let progress_text = format!("Loading images {}/{}...", loaded_count, image_files.len());
-            egui::ProgressBar::new(progress)
-                .animate(true)
+        if loaded_count == total {
+            let progress_text = format!("Loaded {loaded_count} images");
+            egui::ProgressBar::new(1f32)
                 .show_percentage()
                 .text(progress_text)
         } else {
-            let progress_text = format!("Loaded {loaded_count} images");
+            #[allow(clippy::cast_precision_loss)]
+            let progress = (loaded_count / total) as f32;
+            let progress_text = format!("Loading images {loaded_count}/{total}...");
             egui::ProgressBar::new(progress)
+                .animate(true)
                 .show_percentage()
                 .text(progress_text)
         }
@@ -378,19 +405,22 @@ impl eframe::App for ImageViewer {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.spacing_mut().window_margin = Margin::same(5);
 
-            // Create a copy of the list so as to not hold the lock for this entire render
-            // duration.
-            let mut image_files;
-            {
-                let lock = self.image_files.lock();
-                image_files = lock.clone();
-                drop(lock);
-            }
+            let img_vol_cache_lock = self.image_loader.vol_cache.lock();
+            let Some(series_key) = img_vol_cache_lock.keys().next().cloned() else {
+                return;
+            };
+            drop(img_vol_cache_lock);
 
             // The loader is used to filter out files that failed parsing.
             let image_loader = self.image_loader.clone();
+
+            let num_images = self.image_files.lock().len();
+            let num_failed = image_loader.failed.lock().len();
+            let total = num_images - num_failed;
+
             ui.add(ImageViewer::create_progress(
-                &mut image_files,
+                &series_key,
+                total,
                 &image_loader,
             ));
 
@@ -400,17 +430,13 @@ impl eframe::App for ImageViewer {
                     self.current_image -= 1;
                 }
             } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown) || i.key_down(egui::Key::J))
-                && self.current_image != image_files.len() - 1
+                && self.current_image != total - 1
             {
                 self.current_image += 1;
             }
 
-            let img_vol_cache_lock = self.image_loader.vol_cache.lock();
-
-            if let Some(series_key) = img_vol_cache_lock.keys().next() {
-                let slice_key = SliceKey::from((series_key, self.current_image));
-                ui.add(egui::Image::from_uri(slice_key.to_string()));
-            }
+            let slice_key = SliceKey::from((&series_key, self.current_image));
+            ui.add(egui::Image::from_uri(slice_key.to_string()));
         });
     }
 }
