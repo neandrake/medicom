@@ -50,7 +50,7 @@ impl std::fmt::Debug for PixelDataSliceI8 {
 
 impl PixelDataSliceI8 {
     #[must_use]
-    pub fn new(info: PixelDataSliceInfo, buffer: Vec<i8>) -> Self {
+    pub fn new(mut info: PixelDataSliceInfo, buffer: Vec<i8>) -> Self {
         let stride = if info.planar_config() == 0 {
             1
         } else {
@@ -58,6 +58,9 @@ impl PixelDataSliceI8 {
         };
         let interp_as_rgb =
             info.photo_interp().is_some_and(PhotoInterp::is_rgb) && info.samples_per_pixel() == 3;
+
+        info.set_min_val(f64::from(*buffer.iter().min().unwrap_or(&0)));
+        info.set_max_val(f64::from(*buffer.iter().max().unwrap_or(&0)));
 
         Self {
             info,

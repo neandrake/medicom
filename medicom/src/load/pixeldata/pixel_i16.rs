@@ -69,17 +69,17 @@ impl PixelDataSliceI16 {
             for _j in 0..samples {
                 let val = i16::from(bytes[in_pos]);
                 in_pos += I8_SIZE;
+
                 buffer.push(val);
                 if pixel_pad.is_none_or(|pad_val| val != pad_val) {
-                    if val < min {
-                        min = val;
-                    }
-                    if val > max {
-                        max = val;
-                    }
+                    min = min.min(val);
+                    max = max.max(val);
                 }
             }
         }
+
+        pdinfo.set_min_val(min.into());
+        pdinfo.set_max_val(max.into());
 
         let minmax_width = f64::from(max) - f64::from(min);
         let minmax_center = minmax_width / 2_f64;
@@ -152,14 +152,11 @@ impl PixelDataSliceI16 {
                     in_pos += U16_SIZE;
                     val
                 };
+
                 buffer.push(val);
                 if pixel_pad.is_none_or(|pad_val| val != pad_val) {
-                    if val < min {
-                        min = val;
-                    }
-                    if val > max {
-                        max = val;
-                    }
+                    min = min.min(val);
+                    max = max.max(val);
                 }
             }
         }

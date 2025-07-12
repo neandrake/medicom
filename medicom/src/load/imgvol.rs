@@ -16,6 +16,7 @@
 
 //! Loaded DICOM image volume datasets.
 
+use core::f64;
 use std::{
     cmp::Ordering,
     io::{BufReader, Read},
@@ -26,9 +27,8 @@ use crate::{
     dict::stdlookup::STANDARD_DICOM_DICTIONARY,
     load::pixeldata::{
         pdinfo::PixelDataSliceInfo, pdwinlevel::WindowLevel, pixel_i16::PixelDataSliceI16,
-        pixel_i16::PixelI16, pixel_i32::PixelDataSliceI32, pixel_u16::PixelDataSliceU16,
-        pixel_u32::PixelDataSliceU32, pixel_u8::PixelDataSliceU8, BitsAlloc, PhotoInterp,
-        PixelDataError,
+        pixel_i32::PixelDataSliceI32, pixel_u16::PixelDataSliceU16, pixel_u32::PixelDataSliceU32,
+        pixel_u8::PixelDataSliceU8, BitsAlloc, PhotoInterp, PixelDataError,
     },
 };
 
@@ -101,6 +101,16 @@ impl Default for VolDims {
             z_mm: 0f32,
         }
     }
+}
+
+#[derive(Debug)]
+pub struct VolPixel {
+    pub x: usize,
+    pub y: usize,
+    pub z: usize,
+    pub r: f64,
+    pub g: f64,
+    pub b: f64,
 }
 
 impl std::fmt::Display for VolDims {
@@ -194,8 +204,18 @@ impl ImageVolume {
     }
 
     #[must_use]
-    pub fn byte_size(&self) -> usize {
-        self.slices().iter().flatten().count() * std::mem::size_of::<i16>()
+    pub fn photo_interp(&self) -> &PhotoInterp {
+        &self.photo_interp
+    }
+
+    #[must_use]
+    pub fn slope(&self) -> f64 {
+        self.slope
+    }
+
+    #[must_use]
+    pub fn intercept(&self) -> f64 {
+        self.intercept
     }
 
     #[must_use]
@@ -206,6 +226,11 @@ impl ImageVolume {
     #[must_use]
     pub fn max_val(&self) -> f64 {
         self.max_val
+    }
+
+    #[must_use]
+    pub fn byte_size(&self) -> usize {
+        self.slices().iter().flatten().count() * std::mem::size_of::<i16>()
     }
 
     /// Loads a slice into this volume.
@@ -227,9 +252,6 @@ impl ImageVolume {
 
         let mut pdinfo = PixelDataSliceInfo::process(dcmroot);
         pdinfo.validate()?;
-
-        self.min_val = self.min_val.min(pdinfo.min_val());
-        self.max_val = self.max_val.max(pdinfo.max_val());
 
         let dims = pdinfo.vol_dims();
         let stride = pdinfo.stride();
@@ -298,6 +320,9 @@ impl ImageVolume {
         }
 
         let loaded = Self::load_pixel_data(pdinfo)?;
+        self.min_val = self.min_val.min(loaded.0.min_val());
+        self.max_val = self.max_val.max(loaded.0.max_val());
+
         let seek = &loaded.0;
         match self.infos.binary_search_by(|i| Self::cmp_by_zpos(seek, i)) {
             Err(loc) => {
@@ -360,7 +385,7 @@ impl ImageVolume {
         y: usize,
         z: usize,
         winlevel: &WindowLevel,
-    ) -> Result<PixelI16, PixelDataError> {
+    ) -> Result<VolPixel, PixelDataError> {
         let Some(buffer) = self.slices().get(z) else {
             return Err(PixelDataError::InvalidDims(format!("Invalid z-pos: {z}")));
         };
@@ -379,7 +404,7 @@ impl ImageVolume {
             let red = buffer[src_byte_index];
             let green = buffer[src_byte_index + stride];
             let blue = buffer[src_byte_index + stride * 2];
-            (red, green, blue)
+            (f64::from(red), f64::from(green), f64::from(blue))
         } else {
             // TODO: How to make this more composable, that can be configured via a custom
             //       iterator? E.g. apply rescale, then window/level, then colortable.
@@ -388,17 +413,13 @@ impl ImageVolume {
                 .copied()
                 .map(f64::from)
                 .map(|v| v * self.slope + self.intercept)
-                .map(|v| winlevel.apply(v) as i16)
+                .map(|v| winlevel.apply(v))
                 .unwrap_or_default();
-            let val = if self.photo_interp == PhotoInterp::Monochrome1 {
-                !applied_val
-            } else {
-                applied_val
-            };
+            let val = applied_val;
             (val, val, val)
         };
 
-        Ok(PixelI16 { x, y, z, r, g, b })
+        Ok(VolPixel { x, y, z, r, g, b })
     }
 
     pub fn slice_iter(&self, z: usize, winlevel: WindowLevel) -> ImageVolumeSliceIter {
@@ -419,7 +440,7 @@ pub struct ImageVolumeSliceIter<'buf> {
 }
 
 impl Iterator for ImageVolumeSliceIter<'_> {
-    type Item = PixelI16;
+    type Item = VolPixel;
 
     fn next(&mut self) -> Option<Self::Item> {
         let cols = usize::from(self.vol.dims().cols());

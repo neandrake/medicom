@@ -60,9 +60,14 @@ impl PixelDataSliceU16 {
         let num_frames = usize::try_from(pdinfo.num_frames()).unwrap_or(1);
         let samples = usize::from(pdinfo.samples_per_pixel());
         let len = usize::from(pdinfo.cols()) * usize::from(pdinfo.rows()) * num_frames;
+        let pixel_pad = pdinfo
+            .pixel_pad()
+            .and_then(|pad_val| TryInto::<u16>::try_into(pad_val).ok());
 
         let mut buffer: Vec<u16> = Vec::with_capacity(len * samples);
         let mut in_pos: usize = 0;
+        let mut min: u16 = u16::MAX;
+        let mut max: u16 = u16::MIN;
         let bytes = pdinfo.take_bytes();
         for _i in 0..len {
             for _j in 0..samples {
@@ -91,9 +96,18 @@ impl PixelDataSliceU16 {
                     in_pos += U16_SIZE;
                     val
                 };
+
                 buffer.push(val);
+                if pixel_pad.is_none_or(|pad_val| val != pad_val) {
+                    min = min.min(val);
+                    max = max.max(val);
+                }
             }
         }
+
+        pdinfo.set_min_val(min.into());
+        pdinfo.set_max_val(max.into());
+
         Ok(Self::new(pdinfo, buffer))
     }
 

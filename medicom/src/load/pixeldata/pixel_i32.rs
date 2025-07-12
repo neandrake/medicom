@@ -89,14 +89,11 @@ impl PixelDataSliceI32 {
                     in_pos += U32_SIZE;
                     val
                 };
+
                 buffer.push(val);
                 if pixel_pad.is_none_or(|pad_val| val != pad_val) {
-                    if val < min {
-                        min = val;
-                    }
-                    if val > max {
-                        max = val;
-                    }
+                    min = min.min(val);
+                    max = max.max(val);
                 }
             }
         }

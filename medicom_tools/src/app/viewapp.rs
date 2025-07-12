@@ -205,12 +205,14 @@ impl DicomFileImageLoader {
 
     fn to_image(&self, imgvol: &ImageVolume, slice_index: usize) -> ColorImage {
         // WindowLevel to map i16 values into u8.
-        let width = imgvol.max_val() - imgvol.min_val();
+        let min = imgvol.min_val() * imgvol.slope() + imgvol.intercept();
+        let max = imgvol.max_val() * imgvol.slope() + imgvol.intercept();
+        let width = max - min;
         let center = width / 2f64;
         let win = WindowLevel::new(
             String::new(),
-            center,
             width,
+            center,
             f64::from(u8::MIN),
             f64::from(u8::MAX),
         );
