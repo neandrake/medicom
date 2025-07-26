@@ -82,7 +82,7 @@ impl PixelDataSliceI16 {
         pdinfo.set_max_val(max.into());
 
         let minmax_width = f64::from(max) - f64::from(min);
-        let minmax_center = minmax_width / 2_f64;
+        let minmax_center = f64::from(min) + minmax_width / 2_f64;
         let mut already_has_minmax = false;
         for winlevel in pdinfo.win_levels_mut() {
             winlevel.set_out_min(f64::from(i16::MIN));
@@ -164,8 +164,8 @@ impl PixelDataSliceI16 {
         pdinfo.set_min_val(min.into());
         pdinfo.set_max_val(max.into());
 
-        let minmax_center = (f64::from(max) - f64::from(min)) / 2_f64;
         let minmax_width = f64::from(max) - f64::from(min);
+        let minmax_center = f64::from(min) + minmax_width / 2_f64;
         let mut already_has_minmax = false;
         for winlevel in pdinfo.win_levels_mut() {
             winlevel.set_out_min(f64::from(i16::MIN));

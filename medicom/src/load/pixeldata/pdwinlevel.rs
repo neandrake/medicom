@@ -108,3 +108,26 @@ impl WindowLevel {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::WindowLevel;
+
+    #[test]
+    pub fn test_winlevel() {
+        let wl = WindowLevel::new(
+            String::new(),
+            100f64,
+            200f64,
+            f64::from(u8::MIN),
+            f64::from(u8::MAX),
+        );
+
+        let v = wl.apply(0f64) as u8;
+        assert_eq!(u8::MIN, v);
+        let v = wl.apply(200f64) as u8;
+        assert_eq!(u8::MAX, v);
+        let v = wl.apply(100f64) as u8;
+        assert_eq!(u8::MAX / 2 + 1, v);
+    }
+}

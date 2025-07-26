@@ -159,7 +159,7 @@ struct DicomFileImageLoader {
 }
 
 impl DicomFileImageLoader {
-    fn load_files(&self, ctx: Context, files: &Arc<Mutex<Vec<PathBuf>>>) -> Result<()> {
+    fn load_files(&self, _ctx: Context, files: &Arc<Mutex<Vec<PathBuf>>>) -> Result<()> {
         // Create a copy of the files list so the files list lock does not need to be held while
         // every file is loaded.
         let files_copy: Vec<PathBuf>;
@@ -174,7 +174,7 @@ impl DicomFileImageLoader {
             let file = match File::open(path) {
                 Err(e) => {
                     self.failed.lock().insert(path.to_owned());
-                    eprintln!("Failed to open file: {path:?}: {e:?}");
+                    eprintln!("Failed to open file: {}: {e:?}", path.display());
                     return Err(anyhow!(e));
                 }
                 Ok(file) => file,
@@ -185,10 +185,10 @@ impl DicomFileImageLoader {
             let Some(dcmroot) = DicomRoot::parse(&mut parser)? else {
                 self.failed.lock().insert(path.to_owned());
                 eprintln!(
-                    "Failed to load {path:?}, {:?}",
+                    "Failed to load {}, {:?}",
+                    path.display(),
                     PixelDataError::MissingPixelData
                 );
-                ctx.request_repaint();
                 continue;
             };
 
@@ -203,9 +203,8 @@ impl DicomFileImageLoader {
 
             if let Err(e) = imgvol.load_slice(dcmroot) {
                 self.failed.lock().insert(path.to_owned());
-                eprintln!("Failed to load {path:?}: {e:?}");
+                eprintln!("Failed to load {}: {e:?}", path.display());
             }
-            ctx.request_repaint();
         }
 
         // Convert to images only after the full volume has been loaded. Necessary so the proper
@@ -215,9 +214,8 @@ impl DicomFileImageLoader {
         for imgvol in vol_cache.values() {
             for idx in 0..imgvol.slices().len() {
                 let key = SliceKey::from((imgvol.series_uid().as_str(), idx));
-                image_cache
-                    .entry(key)
-                    .or_insert_with(|| Arc::new(self.to_image(imgvol, idx)));
+                let image = Self::to_image(imgvol, idx);
+                image_cache.insert(key, Arc::new(image));
             }
         }
 
@@ -232,22 +230,23 @@ impl DicomFileImageLoader {
         }
     }
 
-    fn to_image(&self, imgvol: &ImageVolume, slice_index: usize) -> ColorImage {
+    fn to_image(imgvol: &ImageVolume, slice_index: usize) -> ColorImage {
         // WindowLevel to map i16 values into u8.
-        let min = imgvol.min_val() * imgvol.slope() + imgvol.intercept();
-        let max = imgvol.max_val() * imgvol.slope() + imgvol.intercept();
+        let min = imgvol.min_val();
+        let max = imgvol.max_val();
         let width = max - min;
-        let center = width / 2f64;
+        let center = min + width / 2f64;
         let win = WindowLevel::new(
             String::new(),
-            width,
-            center,
+            center * imgvol.slope() + imgvol.intercept(),
+            width * imgvol.slope() + imgvol.intercept(),
             f64::from(u8::MIN),
             f64::from(u8::MAX),
         );
         let width = imgvol.dims().rows().into();
         let height = imgvol.dims().cols().into();
 
+        #[allow(clippy::cast_possible_truncation)]
         let iter = imgvol.slice_iter(slice_index, win).map(|p| p.r as u8);
         ColorImage::from_gray_iter([width, height], iter)
     }
@@ -268,7 +267,7 @@ impl ImageLoader for DicomFileImageLoader {
         } else {
             if let Some(imgvol) = self.vol_cache.lock().get(&slice_key.series) {
                 if slice_key.slice_index < imgvol.slices().len() {
-                    let image = self.to_image(imgvol, slice_key.slice_index);
+                    let image = Self::to_image(imgvol, slice_key.slice_index);
                     let image = Arc::new(image);
                     cache.insert(slice_key, image.clone());
                     return Ok(ImagePoll::Ready { image });
@@ -434,6 +433,7 @@ impl eframe::App for ImageViewer {
             {
                 self.current_image += 1;
             }
+            ui.label(format!("Slice: {}", self.current_image));
 
             let slice_key = SliceKey::from((&series_key, self.current_image));
             ui.add(egui::Image::from_uri(slice_key.to_string()));

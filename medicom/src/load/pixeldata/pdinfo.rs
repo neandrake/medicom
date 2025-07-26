@@ -83,7 +83,7 @@ impl PixelDataSliceInfo {
     pub fn sop_instance_id(&self) -> String {
         self.dcmroot
             .get_value_by_tag(&tags::SOPInstanceUID)
-            .and_then(|v| v.string().map(|s| s.to_owned()))
+            .and_then(|v| v.string().map(ToOwned::to_owned))
             .unwrap_or_else(|| "<NO SOP INSTANCE UID>".to_string())
     }
 
@@ -121,6 +121,7 @@ impl PixelDataSliceInfo {
             pd_bytes: Vec::with_capacity(0),
         };
 
+        #[allow(clippy::cast_possible_truncation)]
         if let Some(val) = pdinfo
             .dcmroot()
             .get_value_by_tag(&tags::SliceThickness)
@@ -128,6 +129,7 @@ impl PixelDataSliceInfo {
         {
             pdinfo.slice_thickness = val as f32;
         }
+        #[allow(clippy::cast_possible_truncation)]
         if let Some(val) = pdinfo
             .dcmroot()
             .get_value_by_tag(&tags::SpacingBetweenSlices)
@@ -179,6 +181,7 @@ impl PixelDataSliceInfo {
         }
         if let Some(RawValue::Doubles(val)) = pdinfo.dcmroot().get_value_by_tag(&tags::PixelSpacing)
         {
+            #[allow(clippy::cast_possible_truncation)]
             if val.len() == 2 {
                 pdinfo.pixel_spacing = (val[0] as f32, val[1] as f32);
             }

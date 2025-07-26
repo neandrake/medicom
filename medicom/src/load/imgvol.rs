@@ -27,6 +27,9 @@ use crate::{
     },
 };
 
+const EPSILON_F64: f64 = 0.01_f64;
+const EPSILON_F32: f32 = 0.01_f32;
+
 #[derive(Debug)]
 pub struct VolDims {
     /// The number of voxels across the y-axis.
@@ -98,16 +101,6 @@ impl Default for VolDims {
     }
 }
 
-#[derive(Debug)]
-pub struct VolPixel {
-    pub x: usize,
-    pub y: usize,
-    pub z: usize,
-    pub r: f64,
-    pub g: f64,
-    pub b: f64,
-}
-
 impl std::fmt::Display for VolDims {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -122,13 +115,23 @@ impl PartialEq for VolDims {
     fn eq(&self, other: &Self) -> bool {
         self.rows == other.rows
             && self.cols == other.cols
-            && self.x_mm == other.x_mm
-            && self.y_mm == other.y_mm
-            && self.z_mm == other.z_mm
+            && (self.x_mm - other.x_mm) < EPSILON_F32
+            && (self.y_mm - other.y_mm) < EPSILON_F32
+            && (self.z_mm - other.z_mm) < EPSILON_F32
     }
 }
 
 impl Eq for VolDims {}
+
+#[derive(Debug)]
+pub struct VolPixel {
+    pub x: usize,
+    pub y: usize,
+    pub z: usize,
+    pub r: f64,
+    pub g: f64,
+    pub b: f64,
+}
 
 /// Slices loaded into memory.
 pub struct ImageVolume {
@@ -246,7 +249,7 @@ impl ImageVolume {
         let stride = pdinfo.stride();
         let is_rgb = pdinfo.is_rgb();
         let slope = pdinfo.slope().unwrap_or(1f64);
-        let intercept = pdinfo.slope().unwrap_or(0f64);
+        let intercept = pdinfo.intercept().unwrap_or(0f64);
         let samples_per_pixel = usize::from(pdinfo.samples_per_pixel());
 
         if self.infos.is_empty() {
@@ -285,13 +288,13 @@ impl ImageVolume {
                     format!("RGB mismatch, this: {is_rgb}, other: {}", self.is_rgb),
                 ));
             }
-            if slope != self.slope {
+            if (slope - self.slope).abs() > EPSILON_F64 {
                 return Err(PixelDataError::InconsistentSliceFormat(
                     sop_uid,
                     format!("Slope mismatch: {slope}, other: {}", self.slope),
                 ));
             }
-            if intercept != self.intercept {
+            if (intercept - self.intercept).abs() > EPSILON_F64 {
                 return Err(PixelDataError::InconsistentSliceFormat(
                     sop_uid,
                     format!("Intercept mismatch: {intercept}, other: {}", self.intercept),
@@ -411,6 +414,7 @@ impl ImageVolume {
         Ok(VolPixel { x, y, z, r, g, b })
     }
 
+    #[must_use]
     pub fn slice_iter(&self, z: usize, winlevel: WindowLevel) -> ImageVolumeSliceIter {
         ImageVolumeSliceIter {
             vol: self,
@@ -438,9 +442,8 @@ impl Iterator for ImageVolumeSliceIter<'_> {
             return None;
         }
         let x = self.src_byte_index % cols;
-        let y = self.src_byte_index / cols;
-        let pixel = self.vol.get_pixel(x, y, self.z, &self.winlevel);
+        let y = (self.src_byte_index / cols) % rows;
         self.src_byte_index += 1;
-        pixel.ok()
+        self.vol.get_pixel(x, y, self.z, &self.winlevel).ok()
     }
 }
