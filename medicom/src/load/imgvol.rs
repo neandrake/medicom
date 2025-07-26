@@ -242,8 +242,7 @@ impl ImageVolume {
         let sop_uid = dcmroot.sop_instance_id()?;
         let series_uid = dcmroot.series_instance_id()?;
 
-        let mut pdinfo = PixelDataSliceInfo::process(dcmroot);
-        pdinfo.validate()?;
+        let pdinfo = PixelDataSliceInfo::process(dcmroot)?;
 
         let dims = pdinfo.vol_dims();
         let stride = pdinfo.stride();

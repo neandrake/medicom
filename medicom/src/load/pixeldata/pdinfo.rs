@@ -87,9 +87,12 @@ impl PixelDataSliceInfo {
             .unwrap_or_else(|| "<NO SOP INSTANCE UID>".to_string())
     }
 
+    /// Process a DICOM object to extract and validate in preparation for loading the image data.
+    ///
+    /// # Errors
+    /// - `PixelDataError` if validation of image data dicom elements fails. See `Self::validate`.
     #[allow(clippy::too_many_lines)] // No great way to shrink this down.
-    #[must_use]
-    pub(crate) fn process(dcmroot: DicomRoot) -> Self {
+    pub(crate) fn process(dcmroot: DicomRoot) -> Result<Self, PixelDataError> {
         let big_endian = dcmroot.ts().big_endian();
         let mut pdinfo = Self {
             dcmroot,
@@ -337,7 +340,9 @@ impl PixelDataSliceInfo {
         pdinfo.vr = vr;
         pdinfo.pd_bytes = pd_bytes;
 
-        pdinfo
+        pdinfo.validate()?;
+
+        Ok(pdinfo)
     }
 }
 
@@ -655,8 +660,7 @@ impl PixelDataSliceInfo {
     /// # Errors
     /// - If the value of `BitsAlloc` is unsupported.
     /// - Reading byte/word values from the `PixelData` bytes.
-    pub fn load_pixel_data(mut self) -> Result<PixelDataSlice, PixelDataError> {
-        self.validate()?;
+    pub fn load_pixel_data(self) -> Result<PixelDataSlice, PixelDataError> {
         match (self.bits_alloc, self.is_rgb()) {
             (BitsAlloc::Unsupported(val), _) => Err(PixelDataError::InvalidBitsAlloc(val)),
             (BitsAlloc::Eight, true) => {
@@ -690,6 +694,6 @@ impl PixelDataSliceInfo {
         let Some(dcmroot) = DicomRoot::parse(&mut parser)? else {
             return Err(PixelDataError::MissingPixelData);
         };
-        Ok(PixelDataSliceInfo::process(dcmroot))
+        PixelDataSliceInfo::process(dcmroot)
     }
 }
