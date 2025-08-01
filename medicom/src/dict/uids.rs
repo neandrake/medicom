@@ -92,64 +92,64 @@ pub static JPEGBaselineProcess1: UID = UID::new(
     "JPEG Baseline (Process 1): Default Transfer Syntax for Lossy JPEG 8 Bit Image Compression",
 );
 
-/// JPEG Extended (Process 2 & 4): Default Transfer Syntax for Lossy JPEG 12 Bit Image Compression (Process 4 only)
+/// JPEG Extended (Process 2&4): Default Transfer Syntax for Lossy JPEG 12 Bit Image Compression (Process 4 only)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.51
 /// - **UID Type:** Transfer Syntax
 pub static JPEGExtendedProcess2_and_4: UID = UID::new(
     "JPEGExtendedProcess2_and_4",
     "1.2.840.10008.1.2.4.51",
-    "JPEG Extended (Process 2 & 4): Default Transfer Syntax for Lossy JPEG 12 Bit Image Compression (Process 4 only)",
+    "JPEG Extended (Process 2&4): Default Transfer Syntax for Lossy JPEG 12 Bit Image Compression (Process 4 only)",
 );
 
-/// JPEG Extended (Process 3 & 5) (Retired)
+/// JPEG Extended (Process 3&5) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.52
 /// - **UID Type:** Transfer Syntax
 pub static JPEGExtendedProcess3_and_5: UID = UID::new(
     "JPEGExtendedProcess3_and_5",
     "1.2.840.10008.1.2.4.52",
-    "JPEG Extended (Process 3 & 5) (Retired)",
+    "JPEG Extended (Process 3&5) (Retired)",
 );
 
-/// JPEG Spectral Selection, Non-Hierarchical (Process 6 & 8) (Retired)
+/// JPEG Spectral Selection, Non-Hierarchical (Process 6&8) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.53
 /// - **UID Type:** Transfer Syntax
 pub static JPEGSpectralSelectionNonHierarchicalProcess6_and_8: UID = UID::new(
     "JPEGSpectralSelectionNonHierarchicalProcess6_and_8",
     "1.2.840.10008.1.2.4.53",
-    "JPEG Spectral Selection, Non-Hierarchical (Process 6 & 8) (Retired)",
+    "JPEG Spectral Selection, Non-Hierarchical (Process 6&8) (Retired)",
 );
 
-/// JPEG Spectral Selection, Non-Hierarchical (Process 7 & 9) (Retired)
+/// JPEG Spectral Selection, Non-Hierarchical (Process 7&9) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.54
 /// - **UID Type:** Transfer Syntax
 pub static JPEGSpectralSelectionNonHierarchicalProcess7_and_9: UID = UID::new(
     "JPEGSpectralSelectionNonHierarchicalProcess7_and_9",
     "1.2.840.10008.1.2.4.54",
-    "JPEG Spectral Selection, Non-Hierarchical (Process 7 & 9) (Retired)",
+    "JPEG Spectral Selection, Non-Hierarchical (Process 7&9) (Retired)",
 );
 
-/// JPEG Full Progression, Non-Hierarchical (Process 10 & 12) (Retired)
+/// JPEG Full Progression, Non-Hierarchical (Process 10&12) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.55
 /// - **UID Type:** Transfer Syntax
 pub static JPEGFullProgressionNonHierarchicalProcess10_and_12: UID = UID::new(
     "JPEGFullProgressionNonHierarchicalProcess10_and_12",
     "1.2.840.10008.1.2.4.55",
-    "JPEG Full Progression, Non-Hierarchical (Process 10 & 12) (Retired)",
+    "JPEG Full Progression, Non-Hierarchical (Process 10&12) (Retired)",
 );
 
-/// JPEG Full Progression, Non-Hierarchical (Process 11 & 13) (Retired)
+/// JPEG Full Progression, Non-Hierarchical (Process 11&13) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.56
 /// - **UID Type:** Transfer Syntax
 pub static JPEGFullProgressionNonHierarchicalProcess11_and_13: UID = UID::new(
     "JPEGFullProgressionNonHierarchicalProcess11_and_13",
     "1.2.840.10008.1.2.4.56",
-    "JPEG Full Progression, Non-Hierarchical (Process 11 & 13) (Retired)",
+    "JPEG Full Progression, Non-Hierarchical (Process 11&13) (Retired)",
 );
 
 /// JPEG Lossless, Non-Hierarchical (Process 14)
@@ -172,64 +172,64 @@ pub static JPEGLosslessNonHierarchicalProcess15: UID = UID::new(
     "JPEG Lossless, Non-Hierarchical (Process 15) (Retired)",
 );
 
-/// JPEG Extended, Hierarchical (Process 16 & 18) (Retired)
+/// JPEG Extended, Hierarchical (Process 16&18) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.59
 /// - **UID Type:** Transfer Syntax
 pub static JPEGExtendedHierarchicalProcess16_and_18: UID = UID::new(
     "JPEGExtendedHierarchicalProcess16_and_18",
     "1.2.840.10008.1.2.4.59",
-    "JPEG Extended, Hierarchical (Process 16 & 18) (Retired)",
+    "JPEG Extended, Hierarchical (Process 16&18) (Retired)",
 );
 
-/// JPEG Extended, Hierarchical (Process 17 & 19) (Retired)
+/// JPEG Extended, Hierarchical (Process 17&19) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.60
 /// - **UID Type:** Transfer Syntax
 pub static JPEGExtendedHierarchicalProcess17_and_19: UID = UID::new(
     "JPEGExtendedHierarchicalProcess17_and_19",
     "1.2.840.10008.1.2.4.60",
-    "JPEG Extended, Hierarchical (Process 17 & 19) (Retired)",
+    "JPEG Extended, Hierarchical (Process 17&19) (Retired)",
 );
 
-/// JPEG Spectral Selection, Hierarchical (Process 20 & 22) (Retired)
+/// JPEG Spectral Selection, Hierarchical (Process 20&22) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.61
 /// - **UID Type:** Transfer Syntax
 pub static JPEGSpectralSelectionHierarchicalProcess20_and_22: UID = UID::new(
     "JPEGSpectralSelectionHierarchicalProcess20_and_22",
     "1.2.840.10008.1.2.4.61",
-    "JPEG Spectral Selection, Hierarchical (Process 20 & 22) (Retired)",
+    "JPEG Spectral Selection, Hierarchical (Process 20&22) (Retired)",
 );
 
-/// JPEG Spectral Selection, Hierarchical (Process 21 & 23) (Retired)
+/// JPEG Spectral Selection, Hierarchical (Process 21&23) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.62
 /// - **UID Type:** Transfer Syntax
 pub static JPEGSpectralSelectionHierarchicalProcess21_and_23: UID = UID::new(
     "JPEGSpectralSelectionHierarchicalProcess21_and_23",
     "1.2.840.10008.1.2.4.62",
-    "JPEG Spectral Selection, Hierarchical (Process 21 & 23) (Retired)",
+    "JPEG Spectral Selection, Hierarchical (Process 21&23) (Retired)",
 );
 
-/// JPEG Full Progression, Hierarchical (Process 24 & 26) (Retired)
+/// JPEG Full Progression, Hierarchical (Process 24&26) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.63
 /// - **UID Type:** Transfer Syntax
 pub static JPEGFullProgressionHierarchicalProcess24_and_26: UID = UID::new(
     "JPEGFullProgressionHierarchicalProcess24_and_26",
     "1.2.840.10008.1.2.4.63",
-    "JPEG Full Progression, Hierarchical (Process 24 & 26) (Retired)",
+    "JPEG Full Progression, Hierarchical (Process 24&26) (Retired)",
 );
 
-/// JPEG Full Progression, Hierarchical (Process 25 & 27) (Retired)
+/// JPEG Full Progression, Hierarchical (Process 25&27) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.64
 /// - **UID Type:** Transfer Syntax
 pub static JPEGFullProgressionHierarchicalProcess25_and_27: UID = UID::new(
     "JPEGFullProgressionHierarchicalProcess25_and_27",
     "1.2.840.10008.1.2.4.64",
-    "JPEG Full Progression, Hierarchical (Process 25 & 27) (Retired)",
+    "JPEG Full Progression, Hierarchical (Process 25&27) (Retired)",
 );
 
 /// JPEG Lossless, Hierarchical (Process 28) (Retired)

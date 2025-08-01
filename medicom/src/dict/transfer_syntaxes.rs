@@ -89,7 +89,7 @@ pub static JPEGBaselineProcess1: TransferSyntax = TransferSyntax::new(
     true,
 );
 
-/// JPEG Extended (Process 2 & 4): Default Transfer Syntax for Lossy JPEG 12 Bit Image Compression (Process 4 only)
+/// JPEG Extended (Process 2&4): Default Transfer Syntax for Lossy JPEG 12 Bit Image Compression (Process 4 only)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.51
 pub static JPEGExtendedProcess2_and_4: TransferSyntax = TransferSyntax::new(
@@ -100,7 +100,7 @@ pub static JPEGExtendedProcess2_and_4: TransferSyntax = TransferSyntax::new(
     true,
 );
 
-/// JPEG Extended (Process 3 & 5) (Retired)
+/// JPEG Extended (Process 3&5) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.52
 pub static JPEGExtendedProcess3_and_5: TransferSyntax = TransferSyntax::new(
@@ -111,7 +111,7 @@ pub static JPEGExtendedProcess3_and_5: TransferSyntax = TransferSyntax::new(
     true,
 );
 
-/// JPEG Spectral Selection, Non-Hierarchical (Process 6 & 8) (Retired)
+/// JPEG Spectral Selection, Non-Hierarchical (Process 6&8) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.53
 pub static JPEGSpectralSelectionNonHierarchicalProcess6_and_8: TransferSyntax = TransferSyntax::new(
@@ -122,7 +122,7 @@ pub static JPEGSpectralSelectionNonHierarchicalProcess6_and_8: TransferSyntax = 
     true,
 );
 
-/// JPEG Spectral Selection, Non-Hierarchical (Process 7 & 9) (Retired)
+/// JPEG Spectral Selection, Non-Hierarchical (Process 7&9) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.54
 pub static JPEGSpectralSelectionNonHierarchicalProcess7_and_9: TransferSyntax = TransferSyntax::new(
@@ -133,7 +133,7 @@ pub static JPEGSpectralSelectionNonHierarchicalProcess7_and_9: TransferSyntax = 
     true,
 );
 
-/// JPEG Full Progression, Non-Hierarchical (Process 10 & 12) (Retired)
+/// JPEG Full Progression, Non-Hierarchical (Process 10&12) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.55
 pub static JPEGFullProgressionNonHierarchicalProcess10_and_12: TransferSyntax = TransferSyntax::new(
@@ -144,7 +144,7 @@ pub static JPEGFullProgressionNonHierarchicalProcess10_and_12: TransferSyntax = 
     true,
 );
 
-/// JPEG Full Progression, Non-Hierarchical (Process 11 & 13) (Retired)
+/// JPEG Full Progression, Non-Hierarchical (Process 11&13) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.56
 pub static JPEGFullProgressionNonHierarchicalProcess11_and_13: TransferSyntax = TransferSyntax::new(
@@ -177,7 +177,7 @@ pub static JPEGLosslessNonHierarchicalProcess15: TransferSyntax = TransferSyntax
     true,
 );
 
-/// JPEG Extended, Hierarchical (Process 16 & 18) (Retired)
+/// JPEG Extended, Hierarchical (Process 16&18) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.59
 pub static JPEGExtendedHierarchicalProcess16_and_18: TransferSyntax = TransferSyntax::new(
@@ -188,7 +188,7 @@ pub static JPEGExtendedHierarchicalProcess16_and_18: TransferSyntax = TransferSy
     true,
 );
 
-/// JPEG Extended, Hierarchical (Process 17 & 19) (Retired)
+/// JPEG Extended, Hierarchical (Process 17&19) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.60
 pub static JPEGExtendedHierarchicalProcess17_and_19: TransferSyntax = TransferSyntax::new(
@@ -199,7 +199,7 @@ pub static JPEGExtendedHierarchicalProcess17_and_19: TransferSyntax = TransferSy
     true,
 );
 
-/// JPEG Spectral Selection, Hierarchical (Process 20 & 22) (Retired)
+/// JPEG Spectral Selection, Hierarchical (Process 20&22) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.61
 pub static JPEGSpectralSelectionHierarchicalProcess20_and_22: TransferSyntax = TransferSyntax::new(
@@ -210,7 +210,7 @@ pub static JPEGSpectralSelectionHierarchicalProcess20_and_22: TransferSyntax = T
     true,
 );
 
-/// JPEG Spectral Selection, Hierarchical (Process 21 & 23) (Retired)
+/// JPEG Spectral Selection, Hierarchical (Process 21&23) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.62
 pub static JPEGSpectralSelectionHierarchicalProcess21_and_23: TransferSyntax = TransferSyntax::new(
@@ -221,7 +221,7 @@ pub static JPEGSpectralSelectionHierarchicalProcess21_and_23: TransferSyntax = T
     true,
 );
 
-/// JPEG Full Progression, Hierarchical (Process 24 & 26) (Retired)
+/// JPEG Full Progression, Hierarchical (Process 24&26) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.63
 pub static JPEGFullProgressionHierarchicalProcess24_and_26: TransferSyntax = TransferSyntax::new(
@@ -232,7 +232,7 @@ pub static JPEGFullProgressionHierarchicalProcess24_and_26: TransferSyntax = Tra
     true,
 );
 
-/// JPEG Full Progression, Hierarchical (Process 25 & 27) (Retired)
+/// JPEG Full Progression, Hierarchical (Process 25&27) (Retired)
 ///
 /// - **UID:** 1.2.840.10008.1.2.4.64
 pub static JPEGFullProgressionHierarchicalProcess25_and_27: TransferSyntax = TransferSyntax::new(

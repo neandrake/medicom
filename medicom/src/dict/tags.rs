@@ -27530,7 +27530,7 @@ pub static RescaleType: Tag = Tag::new(
     "Rescale Type",
 );
 
-/// Window Center & Width Explanation
+/// Window Center&Width Explanation
 ///
 /// - **Tag:** (0028,1055)
 /// - **VR:** LO
@@ -27540,7 +27540,7 @@ pub static WindowCenter_and_WidthExplanation: Tag = Tag::new(
     0x0028_1055,
     Some(&vr::LO),
     &VM::AtLeast(1),
-    "Window Center & Width Explanation",
+    "Window Center&Width Explanation",
 );
 
 /// VOI LUT Function

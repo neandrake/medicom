@@ -25,7 +25,7 @@
 
 use std::io::BufRead;
 
-use quick_xml::events::{BytesText, Event};
+use quick_xml::events::{BytesRef, BytesText, Event};
 use quick_xml::name::{LocalName, QName};
 use quick_xml::Error as XmlError;
 use quick_xml::Reader;
@@ -133,9 +133,34 @@ pub struct XmlDicomDefinitionIterator<R: BufRead> {
     uid_part: Option<String>,
 }
 
+fn decode_ref_bytes(data: &BytesRef<'_>) -> String {
+    if data.is_char_ref() {
+        data.resolve_char_ref()
+            .unwrap_or_else(|err| {
+                panic!("Error parsing DICOM Entry reference: {data:?}\n\t{err:?}")
+            })
+            .unwrap_or_else(|| panic!("Error parsing DICOM Entry reference: {data:?}"))
+            .to_string()
+    } else {
+        let data = data
+            .decode()
+            .unwrap_or_else(|err| {
+                panic!("Error parsing DICOM Entry reference: {data:?}\n\t{err:?}")
+            })
+            .trim()
+            .replace('\u{200b}', "");
+        match data.as_str() {
+            "amp" => "&".to_string(),
+            "lt" => "<".to_string(),
+            "gt" => ">".to_string(),
+            other => panic!("Error parsing DICOM Entry reference: {other}"),
+        }
+    }
+}
+
 fn parse_text_bytes(data: &BytesText<'_>) -> String {
-    data.unescape()
-        .unwrap_or_else(|err| panic!("Error parsing DICOM Entry Name: {data:?}\n\t{err:?}"))
+    data.decode()
+        .unwrap_or_else(|err| panic!("Error parsing DICOM Entry text: {data:?}\n\t{err:?}"))
         .trim()
         .replace('\u{200b}', "")
 }
@@ -495,22 +520,64 @@ impl<R: BufRead> Iterator for XmlDicomDefinitionIterator<R> {
                     }
                 }
 
+                // Occurrences of xml-escaped characters such as & ('&amp;') will occur between Text events.
+                Ok(Event::GeneralRef(data)) => match self.state {
+                    XmlDicomReadingState::InDicomElementCell(element_cell) => match element_cell {
+                        XmlDicomElementCell::Name => {
+                            if let Some(ref mut name) = self.element_name {
+                                name.push_str(&decode_ref_bytes(&data));
+                            }
+                        }
+                        XmlDicomElementCell::Keyword => {
+                            if let Some(ref mut keyword) = self.element_keyword {
+                                keyword.push_str(&decode_ref_bytes(&data));
+                            }
+                        }
+                        XmlDicomElementCell::Obs => {
+                            if let Some(ref mut obs) = self.element_obs {
+                                obs.push_str(&decode_ref_bytes(&data));
+                            }
+                        }
+                        _ => {}
+                    },
+
+                    XmlDicomReadingState::InDicomUidCell(uid_cell) => match uid_cell {
+                        XmlDicomUidCell::Name => {
+                            if let Some(ref mut name) = self.uid_name {
+                                name.push_str(&decode_ref_bytes(&data));
+                            }
+                        }
+                        XmlDicomUidCell::Keyword => {
+                            if let Some(ref mut keyword) = self.uid_keyword {
+                                keyword.push_str(&decode_ref_bytes(&data));
+                            }
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                },
+
                 // When Text content occurs the data is extracted and set based on the current
                 // state machine.
                 Ok(Event::Text(data)) => match self.state {
                     XmlDicomReadingState::InDicomElementCell(element_cell) => match element_cell {
+                        XmlDicomElementCell::RowStart => {}
                         XmlDicomElementCell::Tag => {
                             if self.element_tag.is_none() {
                                 self.element_tag = parse_text_bytes_as_u32(&data);
                             }
                         }
                         XmlDicomElementCell::Name => {
-                            if self.element_name.is_none() {
+                            if let Some(ref mut name) = self.element_name {
+                                name.push_str(&parse_text_bytes(&data));
+                            } else {
                                 self.element_name = Some(parse_text_bytes(&data));
                             }
                         }
                         XmlDicomElementCell::Keyword => {
-                            if self.element_keyword.is_none() {
+                            if let Some(ref mut keyword) = self.element_keyword {
+                                keyword.push_str(&parse_text_bytes(&data));
+                            } else {
                                 self.element_keyword = Some(parse_text_bytes(&data));
                             }
                         }
@@ -529,17 +596,26 @@ impl<R: BufRead> Iterator for XmlDicomDefinitionIterator<R> {
                                 self.element_obs = Some(parse_text_bytes(&data));
                             }
                         }
-                        XmlDicomElementCell::RowStart => {}
                     },
                     XmlDicomReadingState::InDicomUidCell(uid_cell) => match uid_cell {
+                        XmlDicomUidCell::RowStart => {}
                         XmlDicomUidCell::Value => {
                             if self.uid_value.is_none() {
                                 self.uid_value = Some(parse_text_bytes(&data));
                             }
                         }
                         XmlDicomUidCell::Name => {
-                            if self.uid_name.is_none() {
+                            if let Some(ref mut name) = self.uid_name {
+                                name.push_str(&parse_text_bytes(&data));
+                            } else {
                                 self.uid_name = Some(parse_text_bytes(&data));
+                            }
+                        }
+                        XmlDicomUidCell::Keyword => {
+                            if let Some(ref mut keyword) = self.uid_keyword {
+                                keyword.push_str(&parse_text_bytes(&data));
+                            } else {
+                                self.uid_keyword = Some(parse_text_bytes(&data));
                             }
                         }
                         XmlDicomUidCell::Type => {
@@ -552,7 +628,6 @@ impl<R: BufRead> Iterator for XmlDicomDefinitionIterator<R> {
                                 self.uid_part = Some(parse_text_bytes(&data));
                             }
                         }
-                        XmlDicomUidCell::RowStart | XmlDicomUidCell::Keyword => {}
                     },
                     _ => {}
                 },

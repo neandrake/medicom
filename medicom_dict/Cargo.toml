@@ -16,5 +16,5 @@ name="medicom_dict"
 path="src/lib.rs"
 
 [dependencies]
-phf_codegen = "0.11"
-quick-xml = "0.37"
+phf_codegen = "0.12"
+quick-xml = "0.38"

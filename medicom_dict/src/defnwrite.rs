@@ -393,10 +393,10 @@ fn process_uid(
     ); // field placeholders
 
     let var_name_key: String = var_name.to_lowercase();
-    ident_lookup.entry(var_name_key, &format!("&uids::{var_name}"));
+    ident_lookup.entry(var_name_key, format!("&uids::{var_name}"));
 
     let id_val_key: String = uid.value.clone();
-    id_lookup.entry(id_val_key, &format!("&uids::{var_name}"));
+    id_lookup.entry(id_val_key, format!("&uids::{var_name}"));
 
     Some(code)
 }
@@ -465,9 +465,9 @@ fn process_transfer_syntax(
         encapsulated_val
     );
     let var_name_key: String = var_name.to_lowercase();
-    ident_lookup.entry(var_name_key, &format!("&ts::{var_name}"));
+    ident_lookup.entry(var_name_key, format!("&ts::{var_name}"));
     let id_val_lookup: String = uid.value.clone();
-    id_lookup.entry(id_val_lookup, &format!("&ts::{var_name}"));
+    id_lookup.entry(id_val_lookup, format!("&ts::{var_name}"));
 
     Some(code)
 }
@@ -482,6 +482,9 @@ fn process_element(
     let var_name: String = sanitize_var_name(&element.name);
     if var_name.is_empty() {
         return None;
+    }
+    if var_name.eq("WindowCenter") {
+        eprintln!("WindowCenter: {element:?}");
     }
 
     let tag_group: u32 = (element.tag >> 16) & 0x0000_FFFF;
@@ -533,8 +536,8 @@ fn process_element(
     ); // field placeholders
 
     let var_name_key: String = var_name.to_lowercase();
-    ident_lookup.entry(var_name_key, &format!("&{dict}{var_name}"));
-    tag_lookup.entry(element.tag, &format!("&{dict}{var_name}"));
+    ident_lookup.entry(var_name_key, format!("&{dict}{var_name}"));
+    tag_lookup.entry(element.tag, format!("&{dict}{var_name}"));
 
     Some(code)
 }
