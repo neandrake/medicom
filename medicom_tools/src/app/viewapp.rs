@@ -24,8 +24,8 @@ use egui::{
     ColorImage, Context, Margin, SizeHint,
 };
 use medicom::{
-    core::{dcmobject::DicomRoot, read::ParserBuilder},
-    dict::stdlookup::STANDARD_DICOM_DICTIONARY,
+    core::{dcmobject::DicomRoot, read::ParserBuilder, values::RawValue},
+    dict::{stdlookup::STANDARD_DICOM_DICTIONARY, tags},
     load::{
         imgvol::ImageVolume,
         pixeldata::{pdwinlevel::WindowLevel, PixelDataError},
@@ -432,10 +432,45 @@ impl eframe::App for ImageViewer {
                 && self.current_image != total - 1
             {
                 self.current_image += 1;
+            } else if ui.input(|i| i.key_pressed(egui::Key::Q)) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
-            ui.label(format!("Slice: {}", self.current_image));
 
             let slice_key = SliceKey::from((&series_key, self.current_image));
+            let vol_cache = image_loader.vol_cache.lock();
+            let slice = vol_cache
+                .get(&series_key)
+                .and_then(|vol| vol.infos().get(self.current_image));
+            if let Some(slice) = slice {
+                let patient_name = slice.dcmroot().get_value_by_tag(&tags::PatientsName);
+                if let Some(RawValue::Strings(vals)) = patient_name {
+                    if let Some(patient_name) = vals.first() {
+                        ui.label(patient_name);
+                    }
+                }
+                let patient_id = slice.dcmroot().get_value_by_tag(&tags::PatientID);
+                if let Some(RawValue::Strings(vals)) = patient_id {
+                    if let Some(patient_id) = vals.first() {
+                        ui.label(patient_id);
+                    }
+                }
+                let series_desc = slice.dcmroot().get_value_by_tag(&tags::SeriesDescription);
+                if let Some(RawValue::Strings(vals)) = series_desc {
+                    if let Some(series_desc) = vals.first() {
+                        ui.label(series_desc);
+                    }
+                }
+
+                let x = slice.image_pos()[0];
+                let y = slice.image_pos()[1];
+                let z = slice.image_pos()[2];
+                ui.label(format!("Top-left Loc: {x}, {y}, {z}"));
+            }
+            drop(vol_cache);
+
+            ui.label(format!("Slice No: {}", self.current_image));
+            ui.label(format!("Series UID: {}", series_key.series_uid));
+
             ui.add(egui::Image::from_uri(slice_key.to_string()));
         });
     }
