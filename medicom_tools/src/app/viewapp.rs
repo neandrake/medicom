@@ -240,7 +240,9 @@ impl DicomFileImageLoader {
         let (width, height, _depth) = imgvol.axis_dims(axis);
 
         #[allow(clippy::cast_possible_truncation)]
-        let iter = imgvol.slice_iter(axis, slice_index, win).map(|p| p.r as u8);
+        let iter = imgvol
+            .slice_iter(axis, slice_index)
+            .map(|p| win.apply(p.r) as u8);
         ColorImage::from_gray_iter([width, height], iter)
     }
 }

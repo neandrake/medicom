@@ -556,28 +556,33 @@ impl PixelDataSliceInfo {
     /// origin of only this slice.
     #[must_use]
     pub fn vol_dims(&self) -> VolDims {
-        let mut z_mm = 0f32;
-        if VolDims::is_valid_dim(self.spacing_between_slices) {
-            z_mm = self.spacing_between_slices;
-        } else if VolDims::is_valid_dim(self.slice_thickness) {
-            z_mm = self.slice_thickness;
-        }
-        VolDims::new(
-            (
-                self.image_pos[0] as f32,
-                self.image_pos[1] as f32,
-                self.image_pos[2] as f32,
-            ),
+        let origin = (
+            self.image_pos[0] as f32,
+            self.image_pos[1] as f32,
+            self.image_pos[2] as f32,
+        );
+
+        let count = (
             usize::from(self.cols),
             usize::from(self.rows),
             // This slice doesn't know of other slices. An ImageVolume must maintain the z_count.
             1,
-            // PixelSpacing first value is space between rows (y) and second value is space between
-            // columns (x).
-            self.pixel_spacing.1,
-            self.pixel_spacing.0,
-            z_mm,
-        )
+        );
+
+        // PixelSpacing first value is space between rows (y) and second value is space between
+        // columns (x).
+        let x_mm = self.pixel_spacing.1;
+        let y_mm = self.pixel_spacing.0;
+        let z_mm = if VolDims::is_valid_dim(self.spacing_between_slices) {
+            self.spacing_between_slices
+        } else if VolDims::is_valid_dim(self.slice_thickness) {
+            self.slice_thickness
+        } else {
+            0f32
+        };
+        let mm = (x_mm, y_mm, z_mm);
+
+        VolDims::new(origin, count, mm)
     }
 
     #[must_use]
