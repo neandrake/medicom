@@ -550,6 +550,10 @@ impl PixelDataSliceInfo {
         self.pixel_rep != 0
     }
 
+    /// Creates a `VolDims` populated with the dimensions of the volume based on only what this SOP
+    /// Instance has information on. It will not have correct information for details which require
+    /// all slices to be loaded. Thus, `z_count` will always be 1, the DICOM origin will be the
+    /// origin of only this slice.
     #[must_use]
     pub fn vol_dims(&self) -> VolDims {
         let mut z_mm = 0f32;
@@ -559,8 +563,15 @@ impl PixelDataSliceInfo {
             z_mm = self.slice_thickness;
         }
         VolDims::new(
-            self.rows,
-            self.cols,
+            (
+                self.image_pos[0] as f32,
+                self.image_pos[1] as f32,
+                self.image_pos[2] as f32,
+            ),
+            usize::from(self.cols),
+            usize::from(self.rows),
+            // This slice doesn't know of other slices. An ImageVolume must maintain the z_count.
+            1,
             // PixelSpacing first value is space between rows (y) and second value is space between
             // columns (x).
             self.pixel_spacing.1,

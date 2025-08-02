@@ -19,7 +19,8 @@
 use std::cmp::Ordering;
 
 use crate::{
-    core::dcmobject::DicomRoot,
+    core::{dcmobject::DicomRoot, values::RawValue},
+    dict::tags,
     load::pixeldata::{
         pdinfo::PixelDataSliceInfo, pdwinlevel::WindowLevel, pixel_i16::PixelDataSliceI16,
         pixel_i32::PixelDataSliceI32, pixel_u16::PixelDataSliceU16, pixel_u32::PixelDataSliceU32,
@@ -32,10 +33,15 @@ const EPSILON_F32: f32 = 0.01_f32;
 
 #[derive(Debug)]
 pub struct VolDims {
-    /// The number of voxels across the y-axis.
-    rows: u16,
+    /// The coordinate in DICOM space of the volume origin (top-left pixel of the bottom-most slice
+    /// loaded into the volume), in (x, y, z).
+    origin: (f32, f32, f32),
     /// The number of voxels across the x-axis.
-    cols: u16,
+    x_count: usize,
+    /// The number of voxels across the y-axis.
+    y_count: usize,
+    /// The number of voxels across the z-axis.
+    z_count: usize,
     /// The distance in mm from the center of one voxel to another, across columns.
     x_mm: f32,
     /// The distance in mm from the center of one voxel to another, across rows.
@@ -46,10 +52,20 @@ pub struct VolDims {
 
 impl VolDims {
     #[must_use]
-    pub fn new(rows: u16, cols: u16, x_mm: f32, y_mm: f32, z_mm: f32) -> Self {
+    pub fn new(
+        origin: (f32, f32, f32),
+        y_count: usize,
+        x_count: usize,
+        z_count: usize,
+        x_mm: f32,
+        y_mm: f32,
+        z_mm: f32,
+    ) -> Self {
         Self {
-            rows,
-            cols,
+            origin,
+            x_count,
+            y_count,
+            z_count,
             x_mm,
             y_mm,
             z_mm,
@@ -64,13 +80,23 @@ impl VolDims {
     }
 
     #[must_use]
-    pub fn rows(&self) -> u16 {
-        self.rows
+    pub fn origin(&self) -> (f32, f32, f32) {
+        self.origin
     }
 
     #[must_use]
-    pub fn cols(&self) -> u16 {
-        self.cols
+    pub fn x_count(&self) -> usize {
+        self.x_count
+    }
+
+    #[must_use]
+    pub fn y_count(&self) -> usize {
+        self.y_count
+    }
+
+    #[must_use]
+    pub fn z_count(&self) -> usize {
+        self.z_count
     }
 
     #[must_use]
@@ -87,13 +113,44 @@ impl VolDims {
     pub fn z_mm(&self) -> f32 {
         self.z_mm
     }
+
+    pub fn inc_z_count(&mut self) {
+        self.z_count += 1;
+    }
+
+    pub fn set_origin(&mut self, origin: (f32, f32, f32)) {
+        self.origin = origin;
+    }
+
+    /// Compares one `VolDims` with another checking exact dimension matching except for the
+    /// `z_count`, which is a value that is not determinable from an individual SOP instance.
+    #[must_use]
+    pub fn matches(&self, other: &VolDims) -> bool {
+        self.x_count == other.x_count
+            && self.y_count == other.y_count
+            && (self.x_mm - other.x_mm).abs() < EPSILON_F32
+            && (self.y_mm - other.y_mm).abs() < EPSILON_F32
+            && (self.z_mm - other.z_mm).abs() < EPSILON_F32
+    }
+
+    /// Converts indices for a pixel in the loaded volume into DICOM coordinate space.
+    #[must_use]
+    pub fn coordinate(&self, x: usize, y: usize, z: usize) -> (f32, f32, f32) {
+        let mut coordinate = self.origin();
+        coordinate.0 += f32::from(x as u16) * self.x_mm;
+        coordinate.1 += f32::from(y as u16) * self.y_mm;
+        coordinate.2 += f32::from(z as u16) * self.z_mm;
+        coordinate
+    }
 }
 
 impl Default for VolDims {
     fn default() -> Self {
         Self {
-            rows: 0,
-            cols: 0,
+            origin: (0_f32, 0_f32, 0_f32),
+            x_count: 0,
+            y_count: 0,
+            z_count: 0,
             x_mm: 0f32,
             y_mm: 0f32,
             z_mm: 0f32,
@@ -106,22 +163,27 @@ impl std::fmt::Display for VolDims {
         write!(
             f,
             "({}x{}, {}mm by {}mm by {}mm)",
-            self.cols, self.rows, self.x_mm, self.y_mm, self.z_mm
+            self.x_count, self.y_count, self.x_mm, self.y_mm, self.z_mm
         )
     }
 }
 
-impl PartialEq for VolDims {
-    fn eq(&self, other: &Self) -> bool {
-        self.rows == other.rows
-            && self.cols == other.cols
-            && (self.x_mm - other.x_mm) < EPSILON_F32
-            && (self.y_mm - other.y_mm) < EPSILON_F32
-            && (self.z_mm - other.z_mm) < EPSILON_F32
-    }
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum VolAxis {
+    X,
+    Y,
+    Z,
 }
 
-impl Eq for VolDims {}
+impl std::fmt::Display for VolAxis {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VolAxis::X => write!(f, "X"),
+            VolAxis::Y => write!(f, "Y"),
+            VolAxis::Z => write!(f, "Z"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct VolPixel {
@@ -138,16 +200,21 @@ pub struct ImageVolume {
     slices: Vec<Vec<i16>>,
     infos: Vec<PixelDataSliceInfo>,
 
+    patient_name: String,
+    patient_id: String,
     series_uid: String,
+    series_desc: String,
+
     dims: VolDims,
     stride: usize,
     is_rgb: bool,
+    pixel_pad: Option<i16>,
     slope: f64,
     intercept: f64,
     samples_per_pixel: usize,
     photo_interp: PhotoInterp,
-    min_val: f64,
-    max_val: f64,
+    min_val: i16,
+    max_val: i16,
 }
 
 impl Default for ImageVolume {
@@ -156,16 +223,21 @@ impl Default for ImageVolume {
             slices: Vec::new(),
             infos: Vec::new(),
 
+            patient_name: String::new(),
+            patient_id: String::new(),
             series_uid: String::new(),
+            series_desc: String::new(),
+
             dims: VolDims::default(),
             stride: 0usize,
             is_rgb: false,
+            pixel_pad: None,
             slope: 1f64,
             intercept: 0f64,
             samples_per_pixel: 0usize,
             photo_interp: PhotoInterp::Unsupported("Unspecified".to_owned()),
-            min_val: f64::MAX,
-            max_val: f64::MIN,
+            min_val: i16::MAX,
+            max_val: i16::MIN,
         }
     }
 }
@@ -179,6 +251,26 @@ impl ImageVolume {
     #[must_use]
     pub fn infos(&self) -> &Vec<PixelDataSliceInfo> {
         &self.infos
+    }
+
+    #[must_use]
+    pub fn patient_name(&self) -> &String {
+        &self.patient_name
+    }
+
+    #[must_use]
+    pub fn patient_id(&self) -> &String {
+        &self.patient_id
+    }
+
+    #[must_use]
+    pub fn series_uid(&self) -> &String {
+        &self.series_uid
+    }
+
+    #[must_use]
+    pub fn series_desc(&self) -> &String {
+        &self.series_desc
     }
 
     #[must_use]
@@ -197,8 +289,8 @@ impl ImageVolume {
     }
 
     #[must_use]
-    pub fn series_uid(&self) -> &String {
-        &self.series_uid
+    pub fn pixel_pad(&self) -> Option<i16> {
+        self.pixel_pad
     }
 
     #[must_use]
@@ -217,18 +309,62 @@ impl ImageVolume {
     }
 
     #[must_use]
-    pub fn min_val(&self) -> f64 {
+    pub fn min_val(&self) -> i16 {
         self.min_val
     }
 
     #[must_use]
-    pub fn max_val(&self) -> f64 {
+    pub fn max_val(&self) -> i16 {
         self.max_val
+    }
+
+    #[must_use]
+    pub fn rescale(&self, val: f64) -> f64 {
+        val * self.slope + self.intercept
     }
 
     #[must_use]
     pub fn byte_size(&self) -> usize {
         self.slices().iter().flatten().count() * std::mem::size_of::<i16>()
+    }
+
+    #[must_use]
+    pub fn axis_dims(&self, axis: &VolAxis) -> (usize, usize, usize) {
+        match axis {
+            VolAxis::X => {
+                let width = self.dims().y_count();
+                let height = self.dims().z_count();
+                let depth = self.dims().x_count();
+                (width, height, depth)
+            }
+            VolAxis::Y => {
+                let width = self.dims().x_count();
+                let height = self.dims().z_count();
+                let depth = self.dims().y_count();
+                (width, height, depth)
+            }
+            VolAxis::Z => {
+                let width = self.dims().x_count();
+                let height = self.dims().y_count();
+                let depth = self.dims().z_count();
+                (width, height, depth)
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn minmax_winlevel(&self) -> WindowLevel {
+        let min = self.min_val();
+        let max = self.max_val();
+        let width = max - min;
+        let center = min + width / 2;
+        WindowLevel::new(
+            String::new(),
+            self.rescale(f64::from(center)),
+            self.rescale(f64::from(width)),
+            f64::MIN,
+            f64::MAX,
+        )
     }
 
     /// Loads a slice into this volume.
@@ -242,20 +378,39 @@ impl ImageVolume {
         let sop_uid = dcmroot.sop_instance_id()?;
         let series_uid = dcmroot.series_instance_id()?;
 
+        if let Some(RawValue::Strings(vals)) = dcmroot.get_value_by_tag(&tags::PatientsName) {
+            if let Some(patient_name) = vals.first() {
+                self.patient_name = patient_name.to_owned();
+            }
+        }
+        if let Some(RawValue::Strings(vals)) = dcmroot.get_value_by_tag(&tags::PatientID) {
+            if let Some(patient_id) = vals.first() {
+                self.patient_id = patient_id.to_owned();
+            }
+        }
+
+        let series_desc = dcmroot
+            .get_value_by_tag(&tags::SeriesDescription)
+            .and_then(|rv| rv.string().cloned())
+            .unwrap_or_default();
+
         let pdinfo = PixelDataSliceInfo::process(dcmroot)?;
 
         let dims = pdinfo.vol_dims();
         let stride = pdinfo.stride();
         let is_rgb = pdinfo.is_rgb();
+        let pixel_pad = pdinfo.pixel_pad().map(|v| v as i16);
         let slope = pdinfo.slope().unwrap_or(1f64);
         let intercept = pdinfo.intercept().unwrap_or(0f64);
         let samples_per_pixel = usize::from(pdinfo.samples_per_pixel());
 
         if self.infos.is_empty() {
             self.series_uid = series_uid;
+            self.series_desc = series_desc;
             self.dims = dims;
             self.stride = stride;
             self.is_rgb = is_rgb;
+            self.pixel_pad = pixel_pad;
             self.slope = slope;
             self.intercept = intercept;
             self.samples_per_pixel = samples_per_pixel;
@@ -269,11 +424,23 @@ impl ImageVolume {
                     ),
                 ));
             }
-            if dims != self.dims {
+            if series_desc != self.series_desc {
+                return Err(PixelDataError::InconsistentSliceFormat(
+                    sop_uid,
+                    format!(
+                        "SeriesDescription mismatch, this: {series_desc}, other: {}",
+                        self.series_desc
+                    ),
+                ));
+            }
+            if !self.dims.matches(&dims) {
                 return Err(PixelDataError::InconsistentSliceFormat(
                     sop_uid,
                     format!("Dimensions mismatch, this: {dims}, other: {}", self.dims),
                 ));
+            } else {
+                // If volume dims match appropriately, increase the number of loaded slices.
+                self.dims.inc_z_count();
             }
             if stride != self.stride {
                 return Err(PixelDataError::InconsistentSliceFormat(
@@ -285,6 +452,15 @@ impl ImageVolume {
                 return Err(PixelDataError::InconsistentSliceFormat(
                     sop_uid,
                     format!("RGB mismatch, this: {is_rgb}, other: {}", self.is_rgb),
+                ));
+            }
+            if pixel_pad != self.pixel_pad {
+                return Err(PixelDataError::InconsistentSliceFormat(
+                    sop_uid,
+                    format!(
+                        "Pixel Padding mismatch, this: {pixel_pad:?}, other: {:?}",
+                        self.pixel_pad
+                    ),
                 ));
             }
             if (slope - self.slope).abs() > EPSILON_F64 {
@@ -311,14 +487,18 @@ impl ImageVolume {
         }
 
         let loaded = Self::load_pixel_data(pdinfo)?;
-        self.min_val = self.min_val.min(loaded.0.min_val());
-        self.max_val = self.max_val.max(loaded.0.max_val());
+        self.min_val = self.min_val.min(loaded.0.min_val() as i16);
+        self.max_val = self.max_val.max(loaded.0.max_val() as i16);
 
         let seek = &loaded.0;
         match self.infos.binary_search_by(|i| Self::cmp_by_zpos(seek, i)) {
             Err(loc) => {
                 self.infos.insert(loc, loaded.0);
                 self.slices.insert(loc, loaded.1);
+                // Update the origin of the volume to be the first slice's, after sorted insertion.
+                if let Some(first_info) = self.infos.first() {
+                    self.dims.set_origin(first_info.vol_dims().origin());
+                }
             }
             Ok(_existing) => {
                 return Err(PixelDataError::InconsistentSliceFormat(
@@ -380,7 +560,7 @@ impl ImageVolume {
         let Some(buffer) = self.slices().get(z) else {
             return Err(PixelDataError::InvalidDims(format!("Invalid z-pos: {z}")));
         };
-        let cols = usize::from(self.dims().cols());
+        let cols = self.dims().x_count();
         let stride = self.stride();
 
         let src_byte_index = x + y * cols;
@@ -403,6 +583,7 @@ impl ImageVolume {
                 .get(src_byte_index)
                 .copied()
                 .map(f64::from)
+                .or_else(|| self.pixel_pad().map(f64::from))
                 .map(|v| v * self.slope + self.intercept)
                 .map(|v| winlevel.apply(v))
                 .unwrap_or_default();
@@ -414,35 +595,67 @@ impl ImageVolume {
     }
 
     #[must_use]
-    pub fn slice_iter(&self, z: usize, winlevel: WindowLevel) -> ImageVolumeSliceIter {
-        ImageVolumeSliceIter {
+    pub fn slice_iter(
+        &self,
+        axis: &VolAxis,
+        axis_index: usize,
+        winlevel: WindowLevel,
+    ) -> ImageVolumeAxisSliceIter {
+        ImageVolumeAxisSliceIter {
             vol: self,
-            z,
+            axis: axis.clone(),
+            axis_index,
             winlevel,
             src_byte_index: 0,
         }
     }
 }
 
-pub struct ImageVolumeSliceIter<'buf> {
+pub struct ImageVolumeAxisSliceIter<'buf> {
     vol: &'buf ImageVolume,
-    z: usize,
+    axis: VolAxis,
+    axis_index: usize,
     winlevel: WindowLevel,
     src_byte_index: usize,
 }
 
-impl Iterator for ImageVolumeSliceIter<'_> {
+impl Iterator for ImageVolumeAxisSliceIter<'_> {
     type Item = VolPixel;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let cols = usize::from(self.vol.dims().cols());
-        let rows = usize::from(self.vol.dims().rows());
-        if self.src_byte_index >= rows * cols {
-            return None;
-        }
-        let x = self.src_byte_index % cols;
-        let y = (self.src_byte_index / cols) % rows;
+        let (x, y, z) = match self.axis {
+            VolAxis::X => {
+                let cols = self.vol.dims().y_count();
+                let rows = self.vol.dims().z_count();
+                if self.src_byte_index >= rows * cols {
+                    return None;
+                }
+                let y = self.src_byte_index % cols;
+                let z = (self.src_byte_index / cols) % rows;
+                (self.axis_index, y, z)
+            }
+            VolAxis::Y => {
+                let cols = self.vol.dims().x_count();
+                let rows = self.vol.dims().z_count();
+                if self.src_byte_index >= rows * cols {
+                    return None;
+                }
+                let x = self.src_byte_index % cols;
+                let z = (self.src_byte_index / cols) % rows;
+                (x, self.axis_index, z)
+            }
+            VolAxis::Z => {
+                let cols = self.vol.dims().x_count();
+                let rows = self.vol.dims().y_count();
+                if self.src_byte_index >= rows * cols {
+                    return None;
+                }
+                let x = self.src_byte_index % cols;
+                let y = (self.src_byte_index / cols) % rows;
+                (x, y, self.axis_index)
+            }
+        };
         self.src_byte_index += 1;
-        self.vol.get_pixel(x, y, self.z, &self.winlevel).ok()
+        self.vol.get_pixel(x, y, z, &self.winlevel).ok()
     }
 }

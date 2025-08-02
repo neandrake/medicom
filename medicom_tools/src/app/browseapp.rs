@@ -335,14 +335,22 @@ impl<'app> BrowseApp {
             }
             Char('d') => {
                 if event.modifiers.contains(KeyModifiers::CONTROL) {
-                    Self::table_select_next(view_state, 15);
+                    Self::table_select_next(view_state, 20);
                 }
                 UserAction::None
             }
             Char('u') => {
                 if event.modifiers.contains(KeyModifiers::CONTROL) {
-                    Self::table_select_next(view_state, -15);
+                    Self::table_select_next(view_state, 20);
                 }
+                UserAction::None
+            }
+            Char('g') => {
+                view_state.table_state.select(Some(0));
+                UserAction::None
+            }
+            Char('G') => {
+                view_state.table_state.select(Some(view_state.num_rows - 1));
                 UserAction::None
             }
             _ => UserAction::None,

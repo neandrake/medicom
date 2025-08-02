@@ -24,11 +24,11 @@ use egui::{
     ColorImage, Context, Margin, SizeHint,
 };
 use medicom::{
-    core::{dcmobject::DicomRoot, read::ParserBuilder, values::RawValue},
-    dict::{stdlookup::STANDARD_DICOM_DICTIONARY, tags},
+    core::{dcmobject::DicomRoot, read::ParserBuilder},
+    dict::stdlookup::STANDARD_DICOM_DICTIONARY,
     load::{
-        imgvol::ImageVolume,
-        pixeldata::{pdwinlevel::WindowLevel, PixelDataError},
+        imgvol::{ImageVolume, VolAxis},
+        pixeldata::PixelDataError,
     },
 };
 use std::{
@@ -61,48 +61,63 @@ impl CommandApplication for ViewApp {
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 struct SliceKey {
     series: SeriesKey,
+    axis: VolAxis,
     slice_index: usize,
 }
 
 impl From<&str> for SliceKey {
     fn from(value: &str) -> Self {
-        let mut slice_index = 0usize;
         let mut series_uid = value;
-        if let Some(lindex) = value.find('[') {
-            series_uid = &value[0..lindex];
-            if let Some(rindex) = value.rfind(']') {
-                let slice = &value[lindex + 1..rindex];
-                slice_index = slice.parse::<usize>().unwrap_or_default();
-            }
+        let mut axis = VolAxis::Z;
+        let mut slice_index = 0usize;
+
+        if let Some((_a, b)) = series_uid.split_once("X:") {
+            axis = VolAxis::X;
+            series_uid = b;
+        } else if let Some((_a, b)) = series_uid.split_once("Y:") {
+            axis = VolAxis::Y;
+            series_uid = b;
+        } else if let Some((_a, b)) = series_uid.split_once("Z:") {
+            axis = VolAxis::Z;
+            series_uid = b;
         }
+
+        if let Some((a, b)) = series_uid.split_once("/") {
+            series_uid = a;
+            slice_index = b.parse::<usize>().unwrap_or_default();
+        }
+
         Self {
             series: SeriesKey::from(series_uid),
+            axis,
             slice_index,
         }
     }
 }
 
-impl From<(&str, usize)> for SliceKey {
-    fn from(value: (&str, usize)) -> Self {
+impl From<(&str, VolAxis, usize)> for SliceKey {
+    fn from(value: (&str, VolAxis, usize)) -> Self {
         Self {
             series: SeriesKey::from(value.0),
-            slice_index: value.1,
+            axis: value.1,
+            slice_index: value.2,
         }
     }
 }
 
-impl From<(&SeriesKey, usize)> for SliceKey {
-    fn from(value: (&SeriesKey, usize)) -> Self {
+impl From<(&SeriesKey, VolAxis, usize)> for SliceKey {
+    fn from(value: (&SeriesKey, VolAxis, usize)) -> Self {
         Self {
             series: value.0.clone(),
-            slice_index: value.1,
+            axis: value.1,
+            slice_index: value.2,
         }
     }
 }
 
 impl std::fmt::Display for SliceKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}[{}]", self.series, self.slice_index)
+        write!(f, "{}:{}/{}", self.axis, self.series, self.slice_index)
     }
 }
 
@@ -154,7 +169,6 @@ impl std::fmt::Display for SeriesKey {
 #[derive(Default)]
 struct DicomFileImageLoader {
     vol_cache: Mutex<HashMap<SeriesKey, ImageVolume>>,
-    image_cache: Mutex<HashMap<SliceKey, Arc<ColorImage>>>,
     failed: Mutex<HashSet<PathBuf>>,
 }
 
@@ -200,29 +214,17 @@ impl DicomFileImageLoader {
 
             let mut vol_cache = self.vol_cache.lock();
             let imgvol = vol_cache.entry(series_key).or_default();
-
             if let Err(e) = imgvol.load_slice(dcmroot) {
                 self.failed.lock().insert(path.to_owned());
                 eprintln!("Failed to load {}: {e:?}", path.display());
             }
-        }
-
-        // Convert to images only after the full volume has been loaded. Necessary so the proper
-        // min/max are computed for window/level.
-        let vol_cache = self.vol_cache.lock();
-        let mut image_cache = self.image_cache.lock();
-        for imgvol in vol_cache.values() {
-            for idx in 0..imgvol.slices().len() {
-                let key = SliceKey::from((imgvol.series_uid().as_str(), idx));
-                let image = Self::to_image(imgvol, idx);
-                image_cache.insert(key, Arc::new(image));
-            }
+            drop(vol_cache);
         }
 
         Ok(())
     }
 
-    fn num_slices_loaded(&self, uri: &SeriesKey) -> usize {
+    fn num_z_slices_loaded(&self, uri: &SeriesKey) -> usize {
         if let Some(vol) = self.vol_cache.lock().get(uri) {
             vol.slices().len()
         } else {
@@ -230,24 +232,15 @@ impl DicomFileImageLoader {
         }
     }
 
-    fn to_image(imgvol: &ImageVolume, slice_index: usize) -> ColorImage {
-        // WindowLevel to map i16 values into u8.
-        let min = imgvol.min_val();
-        let max = imgvol.max_val();
-        let width = max - min;
-        let center = min + width / 2f64;
-        let win = WindowLevel::new(
-            String::new(),
-            center * imgvol.slope() + imgvol.intercept(),
-            width * imgvol.slope() + imgvol.intercept(),
-            f64::from(u8::MIN),
-            f64::from(u8::MAX),
-        );
-        let width = imgvol.dims().rows().into();
-        let height = imgvol.dims().cols().into();
+    fn to_image(imgvol: &ImageVolume, axis: &VolAxis, slice_index: usize) -> ColorImage {
+        let win = imgvol
+            .minmax_winlevel()
+            .with_out(f64::from(u8::MIN), f64::from(u8::MAX));
+
+        let (width, height, _depth) = imgvol.axis_dims(axis);
 
         #[allow(clippy::cast_possible_truncation)]
-        let iter = imgvol.slice_iter(slice_index, win).map(|p| p.r as u8);
+        let iter = imgvol.slice_iter(axis, slice_index, win).map(|p| p.r as u8);
         ColorImage::from_gray_iter([width, height], iter)
     }
 }
@@ -258,24 +251,15 @@ impl ImageLoader for DicomFileImageLoader {
     }
 
     fn load(&self, _ctx: &egui::Context, uri: &str, _: SizeHint) -> egui::load::ImageLoadResult {
-        let mut cache = self.image_cache.lock();
         let slice_key = SliceKey::from(uri);
-        if let Some(loaded_slice) = cache.get(&slice_key) {
-            Ok(ImagePoll::Ready {
-                image: loaded_slice.clone(),
-            })
-        } else {
-            if let Some(imgvol) = self.vol_cache.lock().get(&slice_key.series) {
-                if slice_key.slice_index < imgvol.slices().len() {
-                    let image = Self::to_image(imgvol, slice_key.slice_index);
-                    let image = Arc::new(image);
-                    cache.insert(slice_key, image.clone());
-                    return Ok(ImagePoll::Ready { image });
-                }
+        if let Some(imgvol) = self.vol_cache.lock().get(&slice_key.series) {
+            if slice_key.slice_index < imgvol.axis_dims(&slice_key.axis).2 {
+                let image = Self::to_image(imgvol, &slice_key.axis, slice_key.slice_index);
+                let image = Arc::new(image);
+                return Ok(ImagePoll::Ready { image });
             }
-
-            Err(LoadError::NotSupported)
         }
+        Err(LoadError::NotSupported)
     }
 
     fn forget(&self, uri: &str) {
@@ -297,8 +281,9 @@ impl ImageLoader for DicomFileImageLoader {
 
 struct ImageViewer {
     image_files: Arc<Mutex<Vec<PathBuf>>>,
-    current_image: usize,
+    current_slice: usize,
     image_loader: Arc<DicomFileImageLoader>,
+    view_axis: VolAxis,
 }
 
 impl ImageViewer {
@@ -316,7 +301,6 @@ impl ImageViewer {
 
         // Start the current image as the middle index. Note that at this point the files list is
         // not sorted at all.
-        let current_image = image_files.len() / 2;
         let loader = Arc::new(DicomFileImageLoader::default());
 
         // Create one list of the files, shared to the thread which will load all the images in the
@@ -336,8 +320,9 @@ impl ImageViewer {
         cc.egui_ctx.add_image_loader(loader);
         Ok(Self {
             image_files,
-            current_image,
+            current_slice: usize::MAX,
             image_loader: loader_for_self,
+            view_axis: VolAxis::Z,
         })
     }
 
@@ -358,16 +343,11 @@ impl ImageViewer {
         Ok(())
     }
 
-    fn create_progress(
-        series_key: &SeriesKey,
-        total: usize,
-        image_loader: &Arc<DicomFileImageLoader>,
-    ) -> egui::ProgressBar {
+    fn create_progress(total: usize, loaded_count: usize) -> egui::ProgressBar {
         if total == 0 {
             return egui::ProgressBar::new(1f32).text("Failed to load any images");
         }
 
-        let loaded_count = image_loader.num_slices_loaded(series_key);
         // Unlikely precision loss since number of files would at max be up in the thousands.
         // Additionally, for reporting progress any loss of precision is fine.
         if loaded_count == total {
@@ -377,7 +357,7 @@ impl ImageViewer {
                 .text(progress_text)
         } else {
             #[allow(clippy::cast_precision_loss)]
-            let progress = (loaded_count / total) as f32;
+            let progress = loaded_count as f32 / total as f32;
             let progress_text = format!("Loading images {loaded_count}/{total}...");
             egui::ProgressBar::new(progress)
                 .animate(true)
@@ -413,64 +393,71 @@ impl eframe::App for ImageViewer {
             // The loader is used to filter out files that failed parsing.
             let image_loader = self.image_loader.clone();
 
-            let num_images = self.image_files.lock().len();
+            // File processing progress.
+            let num_files = self.image_files.lock().len();
             let num_failed = image_loader.failed.lock().len();
-            let total = num_images - num_failed;
+            let total_files = num_files - num_failed;
+            let loaded_count = image_loader.num_z_slices_loaded(&series_key);
+            let finished_loading = loaded_count == total_files;
+            ui.add(ImageViewer::create_progress(total_files, loaded_count));
 
-            ui.add(ImageViewer::create_progress(
-                &series_key,
-                total,
-                &image_loader,
-            ));
+            let vol_cache = image_loader.vol_cache.lock();
+            let imgvol = vol_cache.get(&series_key);
+            let Some(imgvol) = imgvol else {
+                return;
+            };
+
+            ui.label(imgvol.patient_name());
+            ui.label(imgvol.patient_id());
+
+            if !finished_loading {
+                return;
+            }
+
+            let axis = self.view_axis.to_owned();
+            let num_slices = imgvol.axis_dims(&axis).2;
+            if self.current_slice == usize::MAX {
+                self.current_slice = num_slices / 2;
+            }
 
             // Modify the image index for iterating.
             if ui.input(|i| i.key_pressed(egui::Key::ArrowUp) || i.key_down(egui::Key::K)) {
-                if self.current_image > 0 {
-                    self.current_image -= 1;
-                }
+                self.current_slice = self.current_slice.saturating_sub(1);
             } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown) || i.key_down(egui::Key::J))
-                && self.current_image != total - 1
             {
-                self.current_image += 1;
+                if self.current_slice < num_slices - 1 {
+                    self.current_slice += 1;
+                }
+            } else if ui.input(|i| i.key_pressed(egui::Key::V)) {
+                // This will take effect on next render.
+                match axis {
+                    VolAxis::X => self.view_axis = VolAxis::Y,
+                    VolAxis::Y => self.view_axis = VolAxis::Z,
+                    VolAxis::Z => self.view_axis = VolAxis::X,
+                }
+                self.current_slice = usize::MAX;
+                return;
             } else if ui.input(|i| i.key_pressed(egui::Key::Q)) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
 
-            let slice_key = SliceKey::from((&series_key, self.current_image));
-            let vol_cache = image_loader.vol_cache.lock();
-            let slice = vol_cache
-                .get(&series_key)
-                .and_then(|vol| vol.infos().get(self.current_image));
-            if let Some(slice) = slice {
-                let patient_name = slice.dcmroot().get_value_by_tag(&tags::PatientsName);
-                if let Some(RawValue::Strings(vals)) = patient_name {
-                    if let Some(patient_name) = vals.first() {
-                        ui.label(patient_name);
-                    }
-                }
-                let patient_id = slice.dcmroot().get_value_by_tag(&tags::PatientID);
-                if let Some(RawValue::Strings(vals)) = patient_id {
-                    if let Some(patient_id) = vals.first() {
-                        ui.label(patient_id);
-                    }
-                }
-                let series_desc = slice.dcmroot().get_value_by_tag(&tags::SeriesDescription);
-                if let Some(RawValue::Strings(vals)) = series_desc {
-                    if let Some(series_desc) = vals.first() {
-                        ui.label(series_desc);
-                    }
-                }
+            let (x, y, z) = match axis {
+                VolAxis::X => (self.current_slice, 0, 0),
+                VolAxis::Y => (0, self.current_slice, 0),
+                VolAxis::Z => (0, 0, self.current_slice),
+            };
+            let (x, y, z) = imgvol.dims().coordinate(x, y, z);
+            ui.label(format!("Top-left Loc: {x:.2}, {y:.2}, {z:.2}"));
+            ui.label(imgvol.series_desc());
 
-                let x = slice.image_pos()[0];
-                let y = slice.image_pos()[1];
-                let z = slice.image_pos()[2];
-                ui.label(format!("Top-left Loc: {x}, {y}, {z}"));
-            }
-            drop(vol_cache);
-
-            ui.label(format!("Slice No: {}", self.current_image));
+            ui.label(format!("Slice No: {}/{num_slices}", self.current_slice + 1));
             ui.label(format!("Series UID: {}", series_key.series_uid));
 
+            // Need to manually drop the cache lock before slice/image loading, otherwise it
+            // results in a deadlock.
+            drop(vol_cache);
+
+            let slice_key = SliceKey::from((&series_key, axis, self.current_slice));
             ui.add(egui::Image::from_uri(slice_key.to_string()));
         });
     }
