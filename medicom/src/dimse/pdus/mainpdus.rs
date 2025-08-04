@@ -2006,7 +2006,7 @@ impl UserInformationItem {
         let length = u16::from_be_bytes(buf);
 
         let mut user_data: Vec<UserPdu> = Vec::new();
-        let mut bytes_left = length as usize;
+        let mut bytes_left = usize::from(length);
         while bytes_left > 0 {
             let pdu = UserPdu::read(&mut dataset)?;
             bytes_left -= pdu.byte_size();

@@ -106,7 +106,7 @@ impl PixelDataSliceU16 {
         let stride = if info.planar_config() == 0 {
             1
         } else {
-            buffer.len() / info.samples_per_pixel() as usize
+            buffer.len() / usize::from(info.samples_per_pixel())
         };
         let interp_as_rgb =
             info.photo_interp().is_some_and(PhotoInterp::is_rgb) && info.samples_per_pixel() == 3;

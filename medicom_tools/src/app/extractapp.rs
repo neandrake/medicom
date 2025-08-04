@@ -72,8 +72,8 @@ impl ExtractApp {
 
         let mut image: ImageBuffer<Rgb<u8>, Vec<u8>> =
             ImageBuffer::new(u32::try_from(width)?, u32::try_from(height)?);
-        #[allow(clippy::cast_possible_truncation)]
         for pix in imgvol.slice_iter(&axis, 0) {
+            #[allow(clippy::cast_possible_truncation)]
             let val = win.apply(pix.r) as u8;
             image.put_pixel(
                 u32::try_from(pix.coord.x)?,

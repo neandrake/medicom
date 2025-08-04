@@ -527,7 +527,7 @@ impl PixelDataSliceInfo {
         if self.planar_config == 0 {
             1
         } else {
-            self.pd_bytes.len() / self.samples_per_pixel as usize
+            self.pd_bytes.len() / usize::from(self.samples_per_pixel)
         }
     }
 

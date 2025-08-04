@@ -51,7 +51,7 @@ use medicom::{
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Layout},
-    style::{Color, Modifier, Style},
+    style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Row, Table, TableState},
     Frame, Terminal,
@@ -125,9 +125,17 @@ struct DicomDocumentModel<'app> {
 struct DicomNodeModel<'m> {
     /// The ordered values parsed from the DICOM elements at this level.
     rows: Vec<Row<'m>>,
+    /// The ordered values within each row.
+    row_vals: Vec<RowValues>,
     /// For each row, the maximum length of DICOM tag name, which aside from DICOM value will be
     /// the only other column of variable width.
     max_name_width: u16,
+}
+
+#[derive(Clone)]
+struct RowValues {
+    name: String,
+    value: String,
 }
 
 /// The view state of what's displayed on screen for a `DicomNodeModel`. This should remain
@@ -151,6 +159,24 @@ enum UserAction {
     Quit,
     NavIntoLevel(usize),
     NavUpLevel,
+}
+
+#[derive(Clone)]
+enum InputMode {
+    /// Normal mode is like vim's Normal mode.
+    Normal,
+    /// There are 2 different search modes, for the time being simplified in state by giving the
+    /// Search mode a parameter. When the parameter is 0, the user is typing search text which
+    /// immediately issues a search and changes the user's selection. When the parameter is 1 or -1
+    /// the user has pressed 'n' or 'N' and a one-time continued search (next or previous,
+    /// respectively).
+    Search(i8),
+}
+
+impl InputMode {
+    fn is_interactive_search(&self) -> bool {
+        matches!(self, InputMode::Search(0))
+    }
 }
 
 impl CommandApplication for BrowseApp {
@@ -223,8 +249,11 @@ impl<'app> BrowseApp {
             .unwrap_or_default()
             .to_string();
 
+        // TODO: This should be wrapped into an application state struct.
         let mut current_tagpath = root_path.clone();
         let mut user_action = UserAction::None;
+        let mut input_mode = InputMode::Normal;
+        let mut input_text = String::new();
 
         loop {
             if let UserAction::Quit = user_action {
@@ -259,12 +288,72 @@ impl<'app> BrowseApp {
             let render_model = table_model.clone();
             // The view_state is small and intended to be cloned every iteration.
             let render_view_state = view_state.clone();
-
-            terminal.draw(|frame| Self::render(render_model, render_view_state, frame))?;
+            let render_input_mode = input_mode.clone();
+            let render_input_text = input_text.clone();
+            terminal.draw(|frame| {
+                Self::render(
+                    render_model,
+                    render_view_state,
+                    render_input_mode,
+                    render_input_text,
+                    frame,
+                )
+            })?;
 
             // Check for user event. If the user event would modify the ViewState it will also be
             // updated (table offset/selection).
-            user_action = Self::process_user_input(&mut view_state)?;
+            (user_action, input_mode) =
+                Self::process_user_input(&mut view_state, input_mode, &mut input_text)?;
+
+            // TODO: The processing of user input should probably not directly modify the view
+            //       state, but instead return the action have a separate function modify the view
+            //       state based on that action. Search is now sorta doing this.
+            // TODO: Move this to a separate function.
+            if let InputMode::Search(inc) = input_mode {
+                if !input_text.is_empty() {
+                    if let Some(model_to_search) = doc_model.node_models.get(&current_tagpath) {
+                        let search_text = input_text.to_lowercase();
+
+                        // Iterate through the rows to search. The iteration starts from the
+                        // current selection, incrementing for as many rows exist, relying on the
+                        // iteration to use modulous to ensure the index wraps around to the
+                        // beginning of the rows. When searching in the reverse direction the
+                        // start and end positions are flipped.
+                        let num_rows = view_state.num_rows;
+                        let mut start = view_state.table_state.selected().unwrap_or_default();
+                        if inc < 0 {
+                            start -= 1;
+                        } else if inc > 0 {
+                            start += 1;
+                        }
+                        let end = start + num_rows;
+                        // Use Box for the type-erasure, as reversing the iterator results in a
+                        // different type. This might be simplified with a custom iterator that can
+                        // iterate in either direction without mucking with types.
+                        let range: Box<dyn Iterator<Item = usize>> = if inc < 0 {
+                            Box::new((start..end).rev())
+                        } else {
+                            Box::new(start..end)
+                        };
+                        for i in range {
+                            let i = i % num_rows;
+                            if let Some(row) = model_to_search.row_vals.get(i) {
+                                if row.name.contains(&search_text)
+                                    || row.value.contains(&search_text)
+                                {
+                                    view_state.table_state.select(Some(i));
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                // The Search(1) / Search(-1) modes are used to issue a single search but stay in
+                // Normal mode.
+                if !input_mode.is_interactive_search() {
+                    input_mode = InputMode::Normal;
+                }
+            }
 
             // Update the table state after updating offset/selection from user input, but prior to
             // updating/modifying the path if the user navigated away from the current node.
@@ -284,77 +373,152 @@ impl<'app> BrowseApp {
     }
 
     /// Polls for user input events and updates `ViewState` based on the user's interaction.
-    fn process_user_input(view_state: &mut DicomNodeViewState) -> Result<UserAction> {
-        let user_action = if event::poll(Duration::from_millis(200))? {
+    fn process_user_input(
+        view_state: &mut DicomNodeViewState,
+        input_mode: InputMode,
+        input_text: &mut String,
+    ) -> Result<(UserAction, InputMode)> {
+        let (user_action, input_mode) = if event::poll(Duration::from_millis(200))? {
             match event::read()? {
                 Key(key) => match key.kind {
-                    KeyEventKind::Press => Self::event_keypress(view_state, key),
-                    KeyEventKind::Release => Self::event_keyrelease(view_state, key),
-                    KeyEventKind::Repeat => UserAction::None,
+                    KeyEventKind::Press => {
+                        Self::event_keypress(view_state, key, input_mode, input_text)
+                    }
+                    KeyEventKind::Release => Self::event_keyrelease(view_state, key, input_mode),
+                    KeyEventKind::Repeat => (UserAction::None, input_mode),
                 },
                 Mouse(mouse) => match mouse.kind {
-                    MouseEventKind::Down(button) | MouseEventKind::Drag(button) => {
-                        Self::event_mouse_down(view_state, mouse, button)
+                    MouseEventKind::Down(button) | MouseEventKind::Drag(button) => (
+                        Self::event_mouse_down(view_state, mouse, button),
+                        input_mode,
+                    ),
+                    MouseEventKind::ScrollDown => {
+                        (Self::event_mouse_scroll_down(view_state, mouse), input_mode)
                     }
-                    MouseEventKind::ScrollDown => Self::event_mouse_scroll_down(view_state, mouse),
-                    MouseEventKind::ScrollUp => Self::event_mouse_scroll_up(view_state, mouse),
-                    _ => UserAction::None,
+                    MouseEventKind::ScrollUp => {
+                        (Self::event_mouse_scroll_up(view_state, mouse), input_mode)
+                    }
+                    _ => (UserAction::None, input_mode),
                 },
-                _ => UserAction::None,
+                _ => (UserAction::None, input_mode),
             }
         } else {
-            UserAction::None
+            (UserAction::None, input_mode)
         };
 
-        Ok(user_action)
+        Ok((user_action, input_mode))
     }
 
-    fn event_keyrelease(_view_state: &mut DicomNodeViewState, _event: KeyEvent) -> UserAction {
-        UserAction::None
+    fn event_keyrelease(
+        _view_state: &mut DicomNodeViewState,
+        _event: KeyEvent,
+        input_mode: InputMode,
+    ) -> (UserAction, InputMode) {
+        (UserAction::None, input_mode)
     }
 
-    fn event_keypress(view_state: &'app mut DicomNodeViewState, event: KeyEvent) -> UserAction {
+    fn event_keypress(
+        view_state: &'app mut DicomNodeViewState,
+        event: KeyEvent,
+        input_mode: InputMode,
+        input_text: &mut String,
+    ) -> (UserAction, InputMode) {
+        match input_mode {
+            InputMode::Normal => Self::event_keypress_normal_mode(view_state, event, input_text),
+            InputMode::Search(c) if c != 0 => {
+                Self::event_keypress_normal_mode(view_state, event, input_text)
+            }
+            InputMode::Search(_) => Self::event_keypress_search_mode(view_state, event, input_text),
+        }
+    }
+
+    fn event_keypress_normal_mode(
+        view_state: &'app mut DicomNodeViewState,
+        event: KeyEvent,
+        input_text: &mut String,
+    ) -> (UserAction, InputMode) {
         match event.code {
-            Char('q') | KeyCode::Esc => UserAction::Quit,
+            Char('q') => (UserAction::Quit, InputMode::Normal),
+
+            KeyCode::Esc => {
+                input_text.clear();
+                (UserAction::None, InputMode::Normal)
+            }
 
             Char('l') | KeyCode::Right | KeyCode::Enter => {
                 if let Some(selected) = view_state.table_state.selected() {
-                    UserAction::NavIntoLevel(selected)
+                    (UserAction::NavIntoLevel(selected), InputMode::Normal)
                 } else {
-                    UserAction::None
+                    (UserAction::None, InputMode::Normal)
                 }
             }
-            Char('h') | KeyCode::Left | KeyCode::Backspace => UserAction::NavUpLevel,
+            Char('h') | KeyCode::Left | KeyCode::Backspace => {
+                (UserAction::NavUpLevel, InputMode::Normal)
+            }
             Char('j') | KeyCode::Down => {
                 Self::table_select_next(view_state, 1);
-                UserAction::None
+                (UserAction::None, InputMode::Normal)
             }
             Char('k') | KeyCode::Up => {
                 Self::table_select_next(view_state, -1);
-                UserAction::None
+                (UserAction::None, InputMode::Normal)
             }
             Char('d') => {
                 if event.modifiers.contains(KeyModifiers::CONTROL) {
                     Self::table_select_next(view_state, 20);
                 }
-                UserAction::None
+                (UserAction::None, InputMode::Normal)
             }
             Char('u') => {
                 if event.modifiers.contains(KeyModifiers::CONTROL) {
                     Self::table_select_next(view_state, 20);
                 }
-                UserAction::None
+                (UserAction::None, InputMode::Normal)
             }
             Char('g') => {
                 view_state.table_state.select(Some(0));
-                UserAction::None
+                (UserAction::None, InputMode::Normal)
             }
             Char('G') => {
                 view_state.table_state.select(Some(view_state.num_rows - 1));
-                UserAction::None
+                (UserAction::None, InputMode::Normal)
             }
-            _ => UserAction::None,
+            Char('n') => (UserAction::None, InputMode::Search(1)),
+            Char('N') => (UserAction::None, InputMode::Search(-1)),
+            Char('/') => {
+                input_text.clear();
+                (UserAction::None, InputMode::Search(0))
+            }
+            _ => (UserAction::None, InputMode::Normal),
         }
+    }
+
+    fn event_keypress_search_mode(
+        _view_state: &'app mut DicomNodeViewState,
+        event: KeyEvent,
+        input_text: &mut String,
+    ) -> (UserAction, InputMode) {
+        let (user_action, input_mode) = match event.code {
+            KeyCode::Esc | KeyCode::Enter => (UserAction::None, InputMode::Normal),
+            KeyCode::Backspace => {
+                if !input_text.is_empty() {
+                    input_text.remove(input_text.len() - 1);
+                }
+                (UserAction::None, InputMode::Search(0))
+            }
+            Char(c) => {
+                if c == 'c' && event.modifiers.contains(KeyModifiers::CONTROL) {
+                    (UserAction::None, InputMode::Normal)
+                } else {
+                    input_text.push(c);
+                    (UserAction::None, InputMode::Search(0))
+                }
+            }
+
+            _ => (UserAction::None, InputMode::Search(0)),
+        };
+
+        (user_action, input_mode)
     }
 
     fn event_mouse_down(
@@ -421,7 +585,13 @@ impl<'app> BrowseApp {
         view_state.table_state.select(Some(i));
     }
 
-    fn render(model: DicomNodeModel, mut view_state: DicomNodeViewState, frame: &mut Frame) {
+    fn render(
+        model: DicomNodeModel,
+        mut view_state: DicomNodeViewState,
+        input_mode: InputMode,
+        input_text: String,
+        frame: &mut Frame,
+    ) {
         let column_widths = [
             Constraint::Length(1),
             Constraint::Length(11),
@@ -466,6 +636,39 @@ impl<'app> BrowseApp {
             .split(frame.area());
 
         frame.render_stateful_widget(table, sections[0], &mut view_state.table_state);
+
+        let mut status_line_spans = Vec::with_capacity(5);
+        status_line_spans.push(" ".into());
+
+        let mode_indicator_style = Style::default()
+            .fg(Color::White)
+            .bg(Color::Rgb(64, 64, 64))
+            .bold();
+        if input_mode.is_interactive_search() {
+            status_line_spans.push(Span::styled("[?]", mode_indicator_style));
+        } else {
+            status_line_spans.push(Span::styled("[N]", mode_indicator_style));
+        }
+
+        if input_mode.is_interactive_search() || !input_text.is_empty() {
+            let (label_style, value_style) = if input_mode.is_interactive_search() {
+                (
+                    Style::default().add_modifier(Modifier::BOLD),
+                    Style::default().fg(Color::LightYellow),
+                )
+            } else {
+                (
+                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(Color::DarkGray),
+                )
+            };
+            status_line_spans.push(Span::styled(" Search: ", label_style));
+            status_line_spans.push(Span::styled(input_text, value_style));
+            if input_mode.is_interactive_search() {
+                status_line_spans.push(Span::styled("_", value_style.bold()));
+            }
+        }
+        frame.render_widget(Line::from(status_line_spans), sections[1]);
     }
 }
 
@@ -493,22 +696,25 @@ impl<'m> DicomNodeModel<'m> {
         let total_sub_items = dcmobj.item_count() + dcmobj.child_count();
         let mut map: HashMap<TagPath, DicomNodeModel<'m>> = HashMap::with_capacity(total_sub_items);
         let mut rows: Vec<Row<'m>> = Vec::with_capacity(total_sub_items);
+        let mut row_vals: Vec<RowValues> = Vec::with_capacity(total_sub_items);
         let mut max_name_width: u16 = 0;
 
         for item in dcmobj.iter_items() {
-            if let Some((row, child_map, name_len)) =
+            if let Some((row, child_map, name_len, row_values)) =
                 DicomNodeModel::parse_dcmobj(item, display_opts)
             {
                 rows.push(row);
+                row_vals.push(row_values);
                 map.extend(child_map);
                 max_name_width = max_name_width.max(name_len);
             }
         }
         for (_child_tag, child) in dcmobj.iter_child_nodes() {
-            if let Some((row, child_map, name_len)) =
+            if let Some((row, child_map, name_len, row_values)) =
                 DicomNodeModel::parse_dcmobj(child, display_opts)
             {
                 rows.push(row);
+                row_vals.push(row_values);
                 map.extend(child_map);
                 max_name_width = max_name_width.max(name_len);
             }
@@ -516,6 +722,7 @@ impl<'m> DicomNodeModel<'m> {
 
         let elem_tbl = DicomNodeModel {
             rows,
+            row_vals,
             max_name_width,
         };
 
@@ -528,7 +735,16 @@ impl<'m> DicomNodeModel<'m> {
     fn parse_dcmobj(
         child: &DicomObject,
         display_opts: &DisplayOpts,
-    ) -> Option<(Row<'m>, HashMap<TagPath, DicomNodeModel<'m>>, u16)> {
+    ) -> Option<(
+        Row<'m>,
+        HashMap<TagPath, DicomNodeModel<'m>>,
+        u16,
+        RowValues,
+    )> {
+        let mut row_vals = RowValues {
+            name: String::new(),
+            value: String::new(),
+        };
         let mut map: HashMap<TagPath, DicomNodeModel<'m>> = HashMap::new();
         let child_tag = child.element().tag();
         if child.item_count() > 0 || child.child_count() > 0 {
@@ -551,6 +767,7 @@ impl<'m> DicomNodeModel<'m> {
         let elem_name = fmt_elem_type.to_string();
         let name_len = u16::try_from(elem_name.len()).unwrap_or(u16::MAX);
 
+        // [expand] [tagnum] [name] [vr] [value]
         let mut cells: Vec<Cell> = Vec::with_capacity(5);
         cells.push(
             Cell::from(if child.child_count() > 0 || child.item_count() > 0 {
@@ -566,6 +783,7 @@ impl<'m> DicomNodeModel<'m> {
                 .style(Style::default().fg(Color::DarkGray)),
         );
 
+        row_vals.name = elem_name.to_lowercase();
         match fmt_elem_type {
             FormattedTagType::Known(_, _) => {
                 cells.push(Cell::from(elem_name));
@@ -590,19 +808,26 @@ impl<'m> DicomNodeModel<'m> {
             FormattedTagValue::Error(_err_str) => {
                 Cell::from("<InvalidValue>").style(Style::default().fg(Color::Red))
             }
-            FormattedTagValue::Uid(uid, name) => Cell::from(Line::from(vec![
-                Span::styled(uid, Style::default()),
-                Span::styled(format!(" {name}"), Style::default().fg(Color::LightYellow)),
-            ])),
-            FormattedTagValue::Stringified(str_val) => Cell::from(str_val),
+            FormattedTagValue::Uid(uid, name) => {
+                row_vals.value = format!("{} {}", uid.to_lowercase(), name.to_lowercase());
+                Cell::from(Line::from(vec![
+                    Span::styled(uid, Style::default()),
+                    Span::styled(format!(" {name}"), Style::default().fg(Color::LightYellow)),
+                ]))
+            }
+            FormattedTagValue::Stringified(str_val) => {
+                row_vals.value = str_val.to_lowercase();
+                Cell::from(str_val)
+            }
         };
         cells.push(cell);
 
-        Some((Row::new(cells), map, name_len))
+        Some((Row::new(cells), map, name_len, row_vals))
     }
 }
 
-/// Returns the path the user has navigated to based on `ViewState::user_nav`.
+/// Returns the path the user has navigated to based on `UserAction`, `InputMode`, and the
+/// `input_text`.
 fn get_tagpath_from_user_action<'app>(
     dcmroot: &DicomRoot,
     doc_model: &'app DicomDocumentModel<'app>,
