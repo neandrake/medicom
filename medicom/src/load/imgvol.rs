@@ -21,159 +21,16 @@ use std::cmp::Ordering;
 use crate::{
     core::{dcmobject::DicomRoot, values::RawValue},
     dict::tags,
-    load::pixeldata::{
-        pdinfo::PixelDataSliceInfo, pdwinlevel::WindowLevel, pixel_i16::PixelDataSliceI16,
-        pixel_i32::PixelDataSliceI32, pixel_u16::PixelDataSliceU16, pixel_u32::PixelDataSliceU32,
-        pixel_u8::PixelDataSliceU8, BitsAlloc, PhotoInterp, PixelDataError,
+    load::{
+        pixeldata::{
+            pdinfo::PixelDataSliceInfo, pdwinlevel::WindowLevel, pixel_i16::PixelDataSliceI16,
+            pixel_i32::PixelDataSliceI32, pixel_u16::PixelDataSliceU16,
+            pixel_u32::PixelDataSliceU32, pixel_u8::PixelDataSliceU8, BitsAlloc, PhotoInterp,
+            PixelDataError,
+        },
+        IndexVec, VolAxis, VolDims, VolPixel, EPSILON_F64,
     },
 };
-
-const EPSILON_F64: f64 = 0.01_f64;
-const EPSILON_F32: f32 = 0.01_f32;
-
-#[derive(Debug)]
-pub struct VolDims {
-    /// The x-coordinate in DICOM space of the volume's origin (top-left of first slice in z-axis).
-    origin_x: f32,
-    /// The y-coordinate in DICOM space of the volume's origin (top-left of first slice in z-axis).
-    origin_y: f32,
-    /// The z-coordinate in DICOM space of the volume's origin (top-left of first slice in z-axis).
-    origin_z: f32,
-
-    /// The number of voxels across, for each axis, in (x, y, z).
-    counts: (usize, usize, usize),
-
-    /// The distance in mm between voxels, for each axis, in (x, y, z).
-    vox_dims: (f32, f32, f32),
-}
-
-impl VolDims {
-    #[must_use]
-    pub fn new(
-        origin: (f32, f32, f32),
-        counts: (usize, usize, usize),
-        vox_dims: (f32, f32, f32),
-    ) -> Self {
-        Self {
-            origin_x: origin.0,
-            origin_y: origin.1,
-            origin_z: origin.2,
-            counts,
-            vox_dims,
-        }
-    }
-
-    /// Checks that a dimension value is valid. A dimension value should be a positive value
-    /// greater than zero.
-    #[must_use]
-    pub fn is_valid_dim(dim: f32) -> bool {
-        !dim.is_nan() && dim > 0f32
-    }
-
-    /// Get the origin, in (x, y, z)
-    #[must_use]
-    pub fn origin(&self) -> (f32, f32, f32) {
-        (self.origin_x, self.origin_y, self.origin_z)
-    }
-
-    #[must_use]
-    pub fn counts(&self) -> (usize, usize, usize) {
-        self.counts
-    }
-
-    #[must_use]
-    pub fn vox_dims(&self) -> (f32, f32, f32) {
-        self.vox_dims
-    }
-
-    pub fn inc_z_count(&mut self) {
-        self.counts.2 += 1;
-    }
-
-    /// Set the origin, in (x, y, z).
-    pub fn set_origin(&mut self, origin: (f32, f32, f32)) {
-        self.origin_x = origin.0;
-        self.origin_y = origin.1;
-        self.origin_z = origin.2;
-    }
-
-    /// Compares one `VolDims` with another checking exact dimension matching except for the
-    /// `counts.2` (z) and origin, which are values that are not determinable from an individual SOP
-    /// instance.
-    #[must_use]
-    pub fn matches(&self, other: &VolDims) -> bool {
-        self.counts.0 == other.counts.0
-            && self.counts.1 == other.counts.1
-            && (self.vox_dims.0 - other.vox_dims.0).abs() < EPSILON_F32
-            && (self.vox_dims.1 - other.vox_dims.1).abs() < EPSILON_F32
-            && (self.vox_dims.2 - other.vox_dims.2).abs() < EPSILON_F32
-    }
-
-    /// Converts indices for a pixel in the loaded volume into DICOM coordinate space.
-    #[must_use]
-    pub fn coordinate(&self, x: usize, y: usize, z: usize) -> (f32, f32, f32) {
-        let mut coordinate = self.origin();
-        coordinate.0 += f32::from(x as u16) * self.vox_dims.0;
-        coordinate.1 += f32::from(y as u16) * self.vox_dims.1;
-        coordinate.2 += f32::from(z as u16) * self.vox_dims.2;
-        coordinate
-    }
-}
-
-impl Default for VolDims {
-    fn default() -> Self {
-        Self {
-            origin_x: 0_f32,
-            origin_y: 0_f32,
-            origin_z: 0_f32,
-            counts: (0, 0, 0),
-            vox_dims: (0f32, 0f32, 0f32),
-        }
-    }
-}
-
-impl std::fmt::Display for VolDims {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "({}x{}x{}, {}mm by {}mm by {}mm, at {:.2},{:.2},{:.2})",
-            self.counts.0,
-            self.counts.1,
-            self.counts.2,
-            self.vox_dims.0,
-            self.vox_dims.1,
-            self.vox_dims.2,
-            self.origin_x,
-            self.origin_y,
-            self.origin_z,
-        )
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum VolAxis {
-    X,
-    Y,
-    Z,
-}
-
-impl std::fmt::Display for VolAxis {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VolAxis::X => write!(f, "X"),
-            VolAxis::Y => write!(f, "Y"),
-            VolAxis::Z => write!(f, "Z"),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct VolPixel {
-    pub coord: (usize, usize, usize),
-    pub r: f64,
-    pub g: f64,
-    pub b: f64,
-}
 
 /// Slices loaded into memory. Pixel values are `i16`.
 pub struct ImageVolume {
@@ -313,21 +170,21 @@ impl ImageVolume {
     pub fn axis_dims(&self, axis: &VolAxis) -> (usize, usize, usize) {
         match axis {
             VolAxis::X => {
-                let width = self.dims.counts.1;
-                let height = self.dims.counts.2;
-                let depth = self.dims.counts.0;
+                let width = self.dims.counts.y;
+                let height = self.dims.counts.z;
+                let depth = self.dims.counts.x;
                 (width, height, depth)
             }
             VolAxis::Y => {
-                let width = self.dims.counts.0;
-                let height = self.dims.counts.2;
-                let depth = self.dims.counts.1;
+                let width = self.dims.counts.x;
+                let height = self.dims.counts.z;
+                let depth = self.dims.counts.y;
                 (width, height, depth)
             }
             VolAxis::Z => {
-                let width = self.dims.counts.0;
-                let height = self.dims.counts.1;
-                let depth = self.dims.counts.2;
+                let width = self.dims.counts.x;
+                let height = self.dims.counts.y;
+                let depth = self.dims.counts.z;
                 (width, height, depth)
             }
         }
@@ -528,16 +385,16 @@ impl ImageVolume {
     /// - If the x,y,z coordinate is invalid, either by being outside the image dimensions, or if
     ///   the Planar Configuration and Samples per Pixel are set up such that beginning of RGB
     ///   values must occur at specific indices.
-    pub fn get_pixel(&self, coord: (usize, usize, usize)) -> Result<VolPixel, PixelDataError> {
-        let Some(buffer) = self.slices().get(coord.2) else {
+    pub fn get_pixel(&self, coord: IndexVec) -> Result<VolPixel, PixelDataError> {
+        let Some(buffer) = self.slices().get(coord.z) else {
             return Err(PixelDataError::InvalidDims(format!(
                 "Invalid z-pos: {}",
-                coord.2
+                coord.z
             )));
         };
 
-        let cols = self.dims.counts.0;
-        let pixel_count = coord.0 + coord.1 * cols;
+        let cols = self.dims.counts.x;
+        let pixel_count = coord.x + coord.y * cols;
         let pixel_count = pixel_count * self.samples_per_pixel;
         if pixel_count >= buffer.len()
             || (self.is_rgb && pixel_count + self.stride * 2 >= buffer.len())
@@ -592,37 +449,49 @@ pub struct ImageVolumeAxisSliceIter<'buf> {
 impl<'buf> ImageVolumeAxisSliceIter<'buf> {
     /// Compute the relative row and column from pixel_count, which used with axis_index to produce
     /// the x,y,z coordinate within the volume whose pixel to retrieve.
-    fn compute_coord(&self, index: usize) -> Option<(usize, usize, usize)> {
+    fn compute_coord(&self, index: usize) -> Option<IndexVec> {
         match self.axis {
             VolAxis::X => {
-                let cols = self.vol.dims.counts.1;
-                let rows = self.vol.dims.counts.2;
+                let cols = self.vol.dims.counts.y;
+                let rows = self.vol.dims.counts.z;
                 if index >= rows * cols {
                     return None;
                 }
                 let y = index % cols;
                 let z = (index / cols) % rows;
-                Some((self.axis_index, y, z))
+                Some(IndexVec {
+                    x: self.axis_index,
+                    y,
+                    z,
+                })
             }
             VolAxis::Y => {
-                let cols = self.vol.dims.counts.0;
-                let rows = self.vol.dims.counts.2;
+                let cols = self.vol.dims.counts.x;
+                let rows = self.vol.dims.counts.z;
                 if index >= rows * cols {
                     return None;
                 }
                 let x = index % cols;
                 let z = (index / cols) % rows;
-                Some((x, self.axis_index, z))
+                Some(IndexVec {
+                    x,
+                    y: self.axis_index,
+                    z,
+                })
             }
             VolAxis::Z => {
-                let cols = self.vol.dims.counts.0;
-                let rows = self.vol.dims.counts.1;
+                let cols = self.vol.dims.counts.x;
+                let rows = self.vol.dims.counts.y;
                 if index >= rows * cols {
                     return None;
                 }
                 let x = index % cols;
                 let y = (index / cols) % rows;
-                Some((x, y, self.axis_index))
+                Some(IndexVec {
+                    x,
+                    y,
+                    z: self.axis_index,
+                })
             }
         }
     }

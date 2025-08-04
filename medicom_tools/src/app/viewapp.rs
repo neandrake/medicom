@@ -26,10 +26,7 @@ use egui::{
 use medicom::{
     core::{dcmobject::DicomRoot, read::ParserBuilder},
     dict::stdlookup::STANDARD_DICOM_DICTIONARY,
-    load::{
-        imgvol::{ImageVolume, VolAxis},
-        pixeldata::PixelDataError,
-    },
+    load::{imgvol::ImageVolume, IndexVec, VolAxis},
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -198,11 +195,7 @@ impl DicomFileImageLoader {
             let mut parser = ParserBuilder::default().build(dataset, &STANDARD_DICOM_DICTIONARY);
             let Some(dcmroot) = DicomRoot::parse(&mut parser)? else {
                 self.failed.lock().insert(path.to_owned());
-                eprintln!(
-                    "Failed to load {}, {:?}",
-                    path.display(),
-                    PixelDataError::MissingPixelData
-                );
+                eprintln!("Missing PixelData: {}", path.display());
                 continue;
             };
 
@@ -443,13 +436,28 @@ impl eframe::App for ImageViewer {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
 
-            let (x, y, z) = match axis {
-                VolAxis::X => (self.current_slice, 0, 0),
-                VolAxis::Y => (0, self.current_slice, 0),
-                VolAxis::Z => (0, 0, self.current_slice),
+            let index_coord = match axis {
+                VolAxis::X => IndexVec {
+                    x: self.current_slice,
+                    y: 0,
+                    z: 0,
+                },
+                VolAxis::Y => IndexVec {
+                    x: 0,
+                    y: self.current_slice,
+                    z: 0,
+                },
+                VolAxis::Z => IndexVec {
+                    x: 0,
+                    y: 0,
+                    z: self.current_slice,
+                },
             };
-            let (x, y, z) = imgvol.dims().coordinate(x, y, z);
-            ui.label(format!("Top-left Loc: {x:.2}, {y:.2}, {z:.2}"));
+            let dcm_pos = imgvol.dims().coordinate(index_coord);
+            ui.label(format!(
+                "Top-left Loc: {:.2}, {:.2}, {:.2}",
+                dcm_pos.x, dcm_pos.y, dcm_pos.z
+            ));
             ui.label(imgvol.series_desc());
 
             ui.label(format!("Slice No: {}/{num_slices}", self.current_slice + 1));

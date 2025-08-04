@@ -20,7 +20,7 @@ use anyhow::{anyhow, Result};
 use image::{ImageBuffer, Rgb};
 use medicom::{
     core::{dcmobject::DicomRoot, defn::ts::TSRef},
-    load::imgvol::{ImageVolume, VolAxis},
+    load::{imgvol::ImageVolume, VolAxis},
 };
 
 use crate::{app::parse_file, args::ExtractArgs, CommandApplication};
@@ -76,8 +76,8 @@ impl ExtractApp {
         for pix in imgvol.slice_iter(&axis, 0) {
             let val = win.apply(pix.r) as u8;
             image.put_pixel(
-                u32::try_from(pix.coord.0)?,
-                u32::try_from(pix.coord.1)?,
+                u32::try_from(pix.coord.x)?,
+                u32::try_from(pix.coord.y)?,
                 Rgb([val, val, val]),
             );
         }

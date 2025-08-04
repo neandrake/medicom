@@ -22,8 +22,8 @@ use crate::{
     },
     dict::tags,
     load::{
-        imgvol::VolDims,
         pixeldata::{pdwinlevel::WindowLevel, BitsAlloc, PhotoInterp, PixelDataError},
+        DicomVec, IndexVec, VolDims,
     },
 };
 
@@ -548,18 +548,18 @@ impl PixelDataSliceInfo {
     /// origin of only this slice.
     #[must_use]
     pub fn vol_dims(&self) -> VolDims {
-        let origin = (
-            self.image_pos[0] as f32,
-            self.image_pos[1] as f32,
-            self.image_pos[2] as f32,
-        );
+        let origin = DicomVec {
+            x: self.image_pos[0] as f32,
+            y: self.image_pos[1] as f32,
+            z: self.image_pos[2] as f32,
+        };
 
-        let count = (
-            usize::from(self.cols),
-            usize::from(self.rows),
+        let count = IndexVec {
+            x: usize::from(self.cols),
+            y: usize::from(self.rows),
             // This slice doesn't know of other slices. An ImageVolume must maintain the z_count.
-            1,
-        );
+            z: 1,
+        };
 
         // PixelSpacing first value is space between rows (y) and second value is space between
         // columns (x).
@@ -572,7 +572,11 @@ impl PixelDataSliceInfo {
         } else {
             0f32
         };
-        let mm = (x_mm, y_mm, z_mm);
+        let mm = DicomVec {
+            x: x_mm,
+            y: y_mm,
+            z: z_mm,
+        };
 
         VolDims::new(origin, count, mm)
     }
