@@ -170,18 +170,9 @@ struct DicomFileImageLoader {
 }
 
 impl DicomFileImageLoader {
-    fn load_files(&self, _ctx: Context, files: &Arc<Mutex<Vec<PathBuf>>>) -> Result<()> {
-        // Create a copy of the files list so the files list lock does not need to be held while
-        // every file is loaded.
-        let files_copy: Vec<PathBuf>;
-        {
-            let guard = files.lock();
-            files_copy = guard.iter().cloned().collect();
-            drop(guard);
-        }
-
+    fn load_files(&self, _ctx: Context, files: Vec<PathBuf>) -> Result<()> {
         // Load all files.
-        for path in &files_copy {
+        for path in &files {
             let file = match File::open(path) {
                 Err(e) => {
                     self.failed.lock().insert(path.to_owned());
@@ -277,7 +268,7 @@ impl ImageLoader for DicomFileImageLoader {
 
 const NO_CURRENT_SLICE_SENTINEL: usize = usize::MAX;
 struct ImageViewer {
-    image_files: Arc<Mutex<Vec<PathBuf>>>,
+    image_files: Vec<PathBuf>,
     current_slice: usize,
     image_loader: Arc<DicomFileImageLoader>,
     view_axis: VolAxis,
@@ -303,12 +294,11 @@ impl ImageViewer {
         // Create one list of the files, shared to the thread which will load all the images in the
         // background. After loading it modifies the input list of files to be sorted based on the
         // image position.
-        let image_files = Arc::new(Mutex::new(image_files));
         let image_files_for_loading = image_files.clone();
         let loader_for_loading = loader.clone();
         let ctx = cc.egui_ctx.clone();
         thread::spawn(move || {
-            if let Err(e) = loader_for_loading.load_files(ctx, &image_files_for_loading) {
+            if let Err(e) = loader_for_loading.load_files(ctx, image_files_for_loading) {
                 eprintln!("Error loading: {e:?}");
             }
         });
@@ -391,7 +381,7 @@ impl eframe::App for ImageViewer {
             let image_loader = self.image_loader.clone();
 
             // File processing progress.
-            let num_files = self.image_files.lock().len();
+            let num_files = self.image_files.len();
             let num_failed = image_loader.failed.lock().len();
             let total_files = num_files - num_failed;
             let loaded_count = image_loader.num_z_slices_loaded(&series_key);
