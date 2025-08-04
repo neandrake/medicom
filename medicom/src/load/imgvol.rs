@@ -175,7 +175,7 @@ pub struct VolPixel {
     pub b: f64,
 }
 
-/// Slices loaded into memory.
+/// Slices loaded into memory. Pixel values are `i16`.
 pub struct ImageVolume {
     slices: Vec<Vec<i16>>,
     infos: Vec<PixelDataSliceInfo>,
@@ -499,6 +499,7 @@ impl ImageVolume {
         }
     }
 
+    /// Loads the PixelData for the given slice. The pixel values will be trunacted to `i16`.
     fn load_pixel_data(
         pdinfo: PixelDataSliceInfo,
     ) -> Result<(PixelDataSliceInfo, Vec<i16>), PixelDataError> {
@@ -555,7 +556,7 @@ impl ImageVolume {
                 .copied()
                 .map(f64::from)
                 .or_else(|| self.pixel_pad().map(f64::from))
-                .map(|v| v * self.slope + self.intercept)
+                .map(|v| self.rescale(v))
                 .unwrap_or_default();
             let val = applied_val;
             (val, val, val)
@@ -588,45 +589,51 @@ pub struct ImageVolumeAxisSliceIter<'buf> {
     pixel_count: usize,
 }
 
-impl Iterator for ImageVolumeAxisSliceIter<'_> {
-    type Item = VolPixel;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // Compute the relative row and column from pixel_count, which used with axis_index to
-        // produce the x,y,z coordinate within the volume whose pixel to retrieve.
-        let (x, y, z) = match self.axis {
+impl<'buf> ImageVolumeAxisSliceIter<'buf> {
+    /// Compute the relative row and column from pixel_count, which used with axis_index to produce
+    /// the x,y,z coordinate within the volume whose pixel to retrieve.
+    fn compute_coord(&self, index: usize) -> Option<(usize, usize, usize)> {
+        match self.axis {
             VolAxis::X => {
                 let cols = self.vol.dims.counts.1;
                 let rows = self.vol.dims.counts.2;
-                if self.pixel_count >= rows * cols {
+                if index >= rows * cols {
                     return None;
                 }
-                let y = self.pixel_count % cols;
-                let z = (self.pixel_count / cols) % rows;
-                (self.axis_index, y, z)
+                let y = index % cols;
+                let z = (index / cols) % rows;
+                Some((self.axis_index, y, z))
             }
             VolAxis::Y => {
                 let cols = self.vol.dims.counts.0;
                 let rows = self.vol.dims.counts.2;
-                if self.pixel_count >= rows * cols {
+                if index >= rows * cols {
                     return None;
                 }
-                let x = self.pixel_count % cols;
-                let z = (self.pixel_count / cols) % rows;
-                (x, self.axis_index, z)
+                let x = index % cols;
+                let z = (index / cols) % rows;
+                Some((x, self.axis_index, z))
             }
             VolAxis::Z => {
                 let cols = self.vol.dims.counts.0;
                 let rows = self.vol.dims.counts.1;
-                if self.pixel_count >= rows * cols {
+                if index >= rows * cols {
                     return None;
                 }
-                let x = self.pixel_count % cols;
-                let y = (self.pixel_count / cols) % rows;
-                (x, y, self.axis_index)
+                let x = index % cols;
+                let y = (index / cols) % rows;
+                Some((x, y, self.axis_index))
             }
-        };
+        }
+    }
+}
+
+impl Iterator for ImageVolumeAxisSliceIter<'_> {
+    type Item = VolPixel;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let coord = self.compute_coord(self.pixel_count)?;
         self.pixel_count += 1;
-        self.vol.get_pixel((x, y, z)).ok()
+        self.vol.get_pixel(coord).ok()
     }
 }

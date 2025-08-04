@@ -21,16 +21,6 @@ use crate::load::pixeldata::{
     PhotoInterp, PixelDataError,
 };
 
-#[derive(Debug)]
-pub struct PixelU16 {
-    pub x: usize,
-    pub y: usize,
-    pub z: usize,
-    pub r: u16,
-    pub g: u16,
-    pub b: u16,
-}
-
 pub struct PixelDataSliceU16 {
     info: PixelDataSliceInfo,
     buffer: Vec<u16>,
@@ -173,67 +163,9 @@ impl PixelDataSliceU16 {
         val
     }
 
-    /// Gets the pixel at the given x,y coordinate.
-    ///
-    /// # Errors
-    /// - If the x,y coordinate is invalid, either by being outside the image dimensions, or if the
-    ///   Planar Configuration and Samples per Pixel are set up such that beginning of RGB values
-    ///   must occur at specific indices.
-    #[allow(clippy::many_single_char_names)]
-    pub fn get_pixel(
-        &self,
-        x: usize,
-        y: usize,
-        z: usize,
-        winlevel: &WindowLevel,
-    ) -> Result<PixelU16, PixelDataError> {
-        let cols = usize::from(self.info().cols());
-        let rows = usize::from(self.info().rows());
-        let samples = usize::from(self.info().samples_per_pixel());
-        let stride = self.stride();
-
-        let src_byte_index = x + y * cols + z * (rows * cols);
-        let src_byte_index = src_byte_index * samples;
-        if src_byte_index >= self.buffer().len()
-            || (self.interp_as_rgb && src_byte_index + stride * 2 >= self.buffer().len())
-        {
-            return Err(PixelDataError::InvalidPixelSource(src_byte_index));
-        }
-
-        let (r, g, b) = if self.interp_as_rgb {
-            let red = self.buffer()[src_byte_index];
-            let green = self.buffer()[src_byte_index + stride];
-            let blue = self.buffer()[src_byte_index + stride * 2];
-            (red, green, blue)
-        } else {
-            let applied_val = self
-                .buffer()
-                .get(src_byte_index)
-                .copied()
-                .map(f64::from)
-                .map(|v| self.rescale(v))
-                .map(|v| winlevel.apply(v) as u16)
-                .or_else(|| self.info().pixel_pad())
-                .unwrap_or_default();
-            let val = if self
-                .info()
-                .photo_interp()
-                .is_some_and(|pi| *pi == PhotoInterp::Monochrome1)
-            {
-                !applied_val
-            } else {
-                applied_val
-            };
-            (val, val, val)
-        };
-
-        Ok(PixelU16 { x, y, z, r, g, b })
-    }
-
     #[must_use]
-    pub fn pixel_iter(&self) -> SlicePixelU16Iter {
-        let winlevel = self
-            .info()
+    pub fn best_winlevel(&self) -> WindowLevel {
+        self.info
             .win_levels()
             // XXX: The window/level computed from the min/max values seems to be better than most
             //      window/levels specified in the dicom, at least prior to applying a color-table.
@@ -257,38 +189,6 @@ impl PixelDataSliceU16 {
                         winlevel.out_max(),
                     )
                 },
-            );
-
-        self.pixel_iter_with_win(winlevel)
-    }
-
-    #[must_use]
-    pub fn pixel_iter_with_win(&self, winlevel: WindowLevel) -> SlicePixelU16Iter {
-        SlicePixelU16Iter {
-            slice: self,
-            winlevel,
-            src_byte_index: 0,
-        }
-    }
-}
-
-pub struct SlicePixelU16Iter<'buf> {
-    slice: &'buf PixelDataSliceU16,
-    winlevel: WindowLevel,
-    src_byte_index: usize,
-}
-
-impl Iterator for SlicePixelU16Iter<'_> {
-    type Item = PixelU16;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let cols = usize::from(self.slice.info().cols());
-        let rows = usize::from(self.slice.info().rows());
-        let x = self.src_byte_index % cols;
-        let y = (self.src_byte_index / cols) % rows;
-        let z = self.src_byte_index / (cols * rows);
-        let pixel = self.slice.get_pixel(x, y, z, &self.winlevel);
-        self.src_byte_index += 1;
-        pixel.ok()
+            )
     }
 }

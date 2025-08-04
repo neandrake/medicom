@@ -14,24 +14,16 @@
    limitations under the License.
 */
 
-use std::io::Read;
-
 use crate::{
     core::{
         dcmobject::DicomRoot,
         defn::vr::{self, VRRef},
-        read::Parser,
         values::RawValue,
     },
     dict::tags,
     load::{
         imgvol::VolDims,
-        pixeldata::{
-            pdslice::PixelDataSlice, pdwinlevel::WindowLevel, pixel_i16::PixelDataSliceI16,
-            pixel_i32::PixelDataSliceI32, pixel_u16::PixelDataSliceU16,
-            pixel_u32::PixelDataSliceU32, pixel_u8::PixelDataSliceU8, BitsAlloc, PhotoInterp,
-            PixelDataError,
-        },
+        pixeldata::{pdwinlevel::WindowLevel, BitsAlloc, PhotoInterp, PixelDataError},
     },
 };
 
@@ -656,60 +648,5 @@ impl PixelDataSliceInfo {
         }
 
         Ok(())
-    }
-
-    /// Loads the pixel data raw bytes into values in a `PixelDataBuffer`.
-    ///
-    /// # Notes
-    /// The type of buffer returned depends on the photometric interpretation and bits allocated.
-    /// - `PhotometricInterpretation` == RGB always returns unsigned variant.
-    ///   - `BitsAlloc` = 8, `PixelDataBuffer::U8`.
-    ///   - `BitsAlloc` = 16, `PixelDataBuffer::U16`.
-    ///   - `BitsAlloc` = 32, `PixelDataBuffer::U32`.
-    /// - `PhotometricInterpretation` == MONOCHROME1/MONOCHROME2 always returns a signed variant.
-    ///   While values may be encoded as unsigned, applying the rescale slope/intercept may result
-    ///   in negative values.
-    ///   - `BitsAlloc` = 8, `PixelDataBuffer::I16` (values are cast from i8/u8 to i16).
-    ///   - `BitsAlloc` = 16, `PixelDataBuffer::I16` (u16 values are cast to i16).
-    ///   - `BitsAlloc` = 32, `PixelDataBuffer::I32` (u32 values are cast to i32).
-    ///
-    /// # Errors
-    /// - If the value of `BitsAlloc` is unsupported.
-    /// - Reading byte/word values from the `PixelData` bytes.
-    pub fn load_pixel_data(self) -> Result<PixelDataSlice, PixelDataError> {
-        match (self.bits_alloc, self.is_rgb()) {
-            (BitsAlloc::Unsupported(val), _) => Err(PixelDataError::InvalidBitsAlloc(val)),
-            (BitsAlloc::Eight, true) => {
-                Ok(PixelDataSlice::U8(PixelDataSliceU8::from_rgb_8bit(self)))
-            }
-            (BitsAlloc::Eight, false) => {
-                Ok(PixelDataSlice::I16(PixelDataSliceI16::from_mono_8bit(self)))
-            }
-            (BitsAlloc::Sixteen, true) => {
-                PixelDataSliceU16::from_rgb_16bit(self).map(PixelDataSlice::U16)
-            }
-            (BitsAlloc::Sixteen, false) => {
-                PixelDataSliceI16::from_mono_16bit(self).map(PixelDataSlice::I16)
-            }
-            (BitsAlloc::ThirtyTwo, true) => {
-                PixelDataSliceU32::from_rgb_32bit(self).map(PixelDataSlice::U32)
-            }
-            (BitsAlloc::ThirtyTwo, false) => {
-                PixelDataSliceI32::from_mono_32bit(self).map(PixelDataSlice::I32)
-            }
-        }
-    }
-
-    /// Processes a DICOM SOP via a `Parser` into a `PixelDataInfo`.
-    ///
-    /// # Errors
-    /// - I/O errors parsing values out of DICOM elements.
-    pub fn process_dcm_parser<R: Read>(
-        mut parser: Parser<'_, R>,
-    ) -> Result<PixelDataSliceInfo, PixelDataError> {
-        let Some(dcmroot) = DicomRoot::parse(&mut parser)? else {
-            return Err(PixelDataError::MissingPixelData);
-        };
-        PixelDataSliceInfo::process(dcmroot)
     }
 }

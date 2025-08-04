@@ -19,11 +19,8 @@
 use anyhow::{anyhow, Result};
 use image::{ImageBuffer, Rgb};
 use medicom::{
-    core::defn::ts::TSRef,
-    load::pixeldata::{
-        pdinfo::PixelDataSliceInfo, pdslice::PixelDataSlice, pixel_i16::PixelI16,
-        pixel_u16::PixelU16, pixel_u8::PixelU8,
-    },
+    core::{dcmobject::DicomRoot, defn::ts::TSRef},
+    load::imgvol::{ImageVolume, VolAxis},
 };
 
 use crate::{app::parse_file, args::ExtractArgs, CommandApplication};
@@ -42,19 +39,6 @@ impl ExtractApp {
     }
 
     fn extract_image(&self) -> Result<()> {
-        let parser = parse_file(&self.args.file, true)?;
-
-        if ExtractApp::is_jpeg(parser.ts()) {
-            return Err(anyhow!(
-                "Unsupported TransferSyntax: {}",
-                parser.ts().uid().name()
-            ));
-        }
-
-        let pixdata_info = PixelDataSliceInfo::process_dcm_parser(parser)?;
-        let pixdata_buffer = pixdata_info.load_pixel_data()?;
-        dbg!(&pixdata_buffer);
-
         let mut output = self.args.output.clone();
         let extension = output
             .extension()
@@ -66,70 +50,38 @@ impl ExtractApp {
             .and_then(|filename| filename.to_owned().into_string().ok())
             .unwrap_or("image".to_string());
 
-        match pixdata_buffer {
-            PixelDataSlice::U8(pdslice) => {
-                let mut image: ImageBuffer<Rgb<u8>, Vec<u8>> =
-                    ImageBuffer::new(pdslice.info().cols().into(), pdslice.info().rows().into());
-                let mut last_z = 0;
-                for PixelU8 { x, y, z, r, g, b } in pdslice.pixel_iter() {
-                    if z != last_z {
-                        image.save(format!("{filename}.{last_z}.{extension}"))?;
-                        image = ImageBuffer::new(
-                            pdslice.info().cols().into(),
-                            pdslice.info().rows().into(),
-                        );
-                    }
-                    last_z = z;
-                    image.put_pixel(u32::try_from(x)?, u32::try_from(y)?, Rgb([r, g, b]));
-                }
-                image.save(format!("{filename}.{last_z}.{extension}"))?;
-            }
-            PixelDataSlice::U16(pdslice) => {
-                let mut image: ImageBuffer<Rgb<u16>, Vec<u16>> =
-                    ImageBuffer::new(pdslice.info().cols().into(), pdslice.info().rows().into());
-                let mut last_z = 0;
-                for PixelU16 { x, y, z, r, g, b } in pdslice.pixel_iter() {
-                    if z != last_z {
-                        image.save(format!("{filename}.{last_z}.{extension}"))?;
-                        image = ImageBuffer::new(
-                            pdslice.info().cols().into(),
-                            pdslice.info().rows().into(),
-                        );
-                    }
-                    last_z = z;
-                    image.put_pixel(u32::try_from(x)?, u32::try_from(y)?, Rgb([r, g, b]));
-                }
-                image.save(format!("{filename}.{last_z}.{extension}"))?;
-            }
-            PixelDataSlice::I16(pdslice) => {
-                let mut image: ImageBuffer<Rgb<u16>, Vec<u16>> =
-                    ImageBuffer::new(pdslice.info().cols().into(), pdslice.info().rows().into());
-                let mut last_z = 0;
-                for PixelU16 { x, y, z, r, g, b } in
-                    // The "image" crate does not support i16 pixel values.
-                    pdslice.pixel_iter().map(|PixelI16 { x, y, z, r, g, b }| {
-                            let r = PixelDataSlice::shift_i16(r);
-                            let g = PixelDataSlice::shift_i16(g);
-                            let b = PixelDataSlice::shift_i16(b);
-                            PixelU16 { x, y, z, r, g, b }
-                        })
-                {
-                    if z != last_z {
-                        image.save(format!("{filename}.{last_z}.{extension}"))?;
-                        image = ImageBuffer::new(
-                            pdslice.info().cols().into(),
-                            pdslice.info().rows().into(),
-                        );
-                    }
-                    last_z = z;
-                    image.put_pixel(u32::try_from(x)?, u32::try_from(y)?, Rgb([r, g, b]));
-                }
-                image.save(format!("{filename}.{last_z}.{extension}"))?;
-            }
-            other => {
-                return Err(anyhow!("Unsupported PixelData: {other:?}"));
-            }
+        let mut parser = parse_file(&self.args.file, true)?;
+        if ExtractApp::is_jpeg(parser.ts()) {
+            return Err(anyhow!(
+                "Unsupported TransferSyntax: {}",
+                parser.ts().uid().name()
+            ));
         }
+
+        let Some(dcmroot) = DicomRoot::parse(&mut parser)? else {
+            return Err(anyhow!("DICOM SOP is missing PixelData"));
+        };
+        let mut imgvol = ImageVolume::default();
+        imgvol.load_slice(dcmroot)?;
+        let win = imgvol
+            .minmax_winlevel()
+            .with_out(f64::from(u8::MIN), f64::from(u8::MAX));
+
+        let axis = VolAxis::Z;
+        let (width, height, _depth) = imgvol.axis_dims(&axis);
+
+        let mut image: ImageBuffer<Rgb<u8>, Vec<u8>> =
+            ImageBuffer::new(u32::try_from(width)?, u32::try_from(height)?);
+        #[allow(clippy::cast_possible_truncation)]
+        for pix in imgvol.slice_iter(&axis, 0) {
+            let val = win.apply(pix.r) as u8;
+            image.put_pixel(
+                u32::try_from(pix.coord.0)?,
+                u32::try_from(pix.coord.1)?,
+                Rgb([val, val, val]),
+            );
+        }
+        image.save(format!("{filename}.{extension}"))?;
 
         Ok(())
     }
