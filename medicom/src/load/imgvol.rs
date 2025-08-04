@@ -167,8 +167,8 @@ impl ImageVolume {
 
     /// Returns the dimensions ordered by (width, height, depth) oriented to the given axis.
     #[must_use]
-    pub fn axis_dims(&self, axis: &VolAxis) -> (usize, usize, usize) {
-        match axis {
+    pub fn axis_dims(&self, axis: &VolAxis) -> IndexVec {
+        let (width, height, depth) = match axis {
             VolAxis::X => {
                 let width = self.dims.counts.y;
                 let height = self.dims.counts.z;
@@ -187,6 +187,11 @@ impl ImageVolume {
                 let depth = self.dims.counts.z;
                 (width, height, depth)
             }
+        };
+        IndexVec {
+            x: width,
+            y: height,
+            z: depth,
         }
     }
 

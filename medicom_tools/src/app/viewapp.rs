@@ -230,13 +230,13 @@ impl DicomFileImageLoader {
             .minmax_winlevel()
             .with_out(f64::from(u8::MIN), f64::from(u8::MAX));
 
-        let (width, height, _depth) = imgvol.axis_dims(axis);
+        let axis_dims = imgvol.axis_dims(axis);
 
         #[allow(clippy::cast_possible_truncation)]
         let iter = imgvol
             .slice_iter(axis, slice_index)
             .map(|p| win.apply(p.r) as u8);
-        ColorImage::from_gray_iter([width, height], iter)
+        ColorImage::from_gray_iter([axis_dims.x, axis_dims.y], iter)
     }
 }
 
@@ -248,7 +248,8 @@ impl ImageLoader for DicomFileImageLoader {
     fn load(&self, _ctx: &egui::Context, uri: &str, _: SizeHint) -> egui::load::ImageLoadResult {
         let slice_key = SliceKey::from(uri);
         if let Some(imgvol) = self.vol_cache.lock().get(&slice_key.series) {
-            if slice_key.slice_index < imgvol.axis_dims(&slice_key.axis).2 {
+            let axis_dims = imgvol.axis_dims(&slice_key.axis);
+            if slice_key.slice_index < axis_dims.z {
                 let image = Self::to_image(imgvol, &slice_key.axis, slice_key.slice_index);
                 let image = Arc::new(image);
                 return Ok(ImagePoll::Ready { image });
@@ -274,6 +275,7 @@ impl ImageLoader for DicomFileImageLoader {
     }
 }
 
+const NO_CURRENT_SLICE_SENTINEL: usize = usize::MAX;
 struct ImageViewer {
     image_files: Arc<Mutex<Vec<PathBuf>>>,
     current_slice: usize,
@@ -315,7 +317,7 @@ impl ImageViewer {
         cc.egui_ctx.add_image_loader(loader);
         Ok(Self {
             image_files,
-            current_slice: usize::MAX,
+            current_slice: NO_CURRENT_SLICE_SENTINEL,
             image_loader: loader_for_self,
             view_axis: VolAxis::Z,
         })
@@ -410,61 +412,51 @@ impl eframe::App for ImageViewer {
             }
 
             let axis = self.view_axis.to_owned();
-            let num_slices = imgvol.axis_dims(&axis).2;
-            if self.current_slice == usize::MAX {
+            let axis_dims = imgvol.axis_dims(&axis);
+            let num_slices = axis_dims.z;
+            if self.current_slice == NO_CURRENT_SLICE_SENTINEL {
                 self.current_slice = num_slices / 2;
             }
 
             // Modify the image index for iterating.
-            if ui.input(|i| i.key_pressed(egui::Key::ArrowUp) || i.key_down(egui::Key::K)) {
+            if ui.input(|i| i.key_down(egui::Key::ArrowUp) || i.key_down(egui::Key::K)) {
                 self.current_slice = self.current_slice.saturating_sub(1);
-            } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown) || i.key_down(egui::Key::J))
-            {
+            } else if ui.input(|i| i.key_down(egui::Key::ArrowDown) || i.key_down(egui::Key::J)) {
                 if self.current_slice < num_slices - 1 {
                     self.current_slice += 1;
                 }
             } else if ui.input(|i| i.key_pressed(egui::Key::V)) {
-                // This will take effect on next render.
                 match axis {
                     VolAxis::X => self.view_axis = VolAxis::Y,
                     VolAxis::Y => self.view_axis = VolAxis::Z,
                     VolAxis::Z => self.view_axis = VolAxis::X,
                 }
-                self.current_slice = usize::MAX;
+                self.current_slice = NO_CURRENT_SLICE_SENTINEL;
+                // Don't finish rendering, let the next render pick up on this axis change.
                 return;
             } else if ui.input(|i| i.key_pressed(egui::Key::Q)) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
 
-            let index_coord = match axis {
-                VolAxis::X => IndexVec {
-                    x: self.current_slice,
-                    y: 0,
-                    z: 0,
-                },
-                VolAxis::Y => IndexVec {
-                    x: 0,
-                    y: self.current_slice,
-                    z: 0,
-                },
-                VolAxis::Z => IndexVec {
-                    x: 0,
-                    y: 0,
-                    z: self.current_slice,
-                },
-            };
+            let mut index_coord = IndexVec::default();
+            match axis {
+                VolAxis::X => index_coord.x = self.current_slice,
+                VolAxis::Y => index_coord.y = self.current_slice,
+                VolAxis::Z => index_coord.z = self.current_slice,
+            }
             let dcm_pos = imgvol.dims().coordinate(index_coord);
             ui.label(format!(
                 "Top-left Loc: {:.2}, {:.2}, {:.2}",
                 dcm_pos.x, dcm_pos.y, dcm_pos.z
             ));
+            ui.label(format!("Slice Dims: {}x{}", axis_dims.x, axis_dims.y));
             ui.label(imgvol.series_desc());
 
             ui.label(format!("Slice No: {}/{num_slices}", self.current_slice + 1));
             ui.label(format!("Series UID: {}", series_key.series_uid));
 
-            // Need to manually drop the cache lock before slice/image loading, otherwise it
-            // results in a deadlock.
+            // Need to manually drop the cache lock before slice/image loading (via adding an image
+            // to the ui), otherwise it results in a deadlock.
             drop(vol_cache);
 
             let slice_key = SliceKey::from((&series_key, axis, self.current_slice));

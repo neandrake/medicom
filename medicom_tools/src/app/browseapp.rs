@@ -125,13 +125,15 @@ struct DicomDocumentModel<'app> {
 struct DicomNodeModel<'m> {
     /// The ordered values parsed from the DICOM elements at this level.
     rows: Vec<Row<'m>>,
-    /// The ordered values within each row.
+    /// The ordered values within each row, because ratatui does not provide access to the content
+    /// of the rows/cells after creation.
     row_vals: Vec<RowValues>,
     /// For each row, the maximum length of DICOM tag name, which aside from DICOM value will be
     /// the only other column of variable width.
     max_name_width: u16,
 }
 
+/// Values within a row, used for searching.
 #[derive(Clone)]
 struct RowValues {
     name: String,
