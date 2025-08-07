@@ -65,7 +65,7 @@ impl ExtractApp {
         imgvol.load_slice(dcmroot)?;
         let win = imgvol
             .minmax_winlevel()
-            .with_out(f64::from(u8::MIN), f64::from(u8::MAX));
+            .with_out(u8::MIN as f32, u8::MAX as f32);
 
         let axis = VolAxis::Z;
         let axis_dims = imgvol.axis_dims(&axis);

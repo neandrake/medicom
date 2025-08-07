@@ -53,21 +53,21 @@ pub struct PixelDataSliceInfo {
     bits_stored: u16,
     high_bit: u16,
     pixel_rep: u16,
-    slope: Option<f64>,
-    intercept: Option<f64>,
+    slope: Option<f32>,
+    intercept: Option<f32>,
     unit: String,
     patient_pos: String,
-    image_pos: [f64; 3],
-    patient_orientation: [f64; 6],
-    min_val: f64,
-    max_val: f64,
+    image_pos: [f32; 3],
+    patient_orientation: [f32; 6],
+    min_val: f32,
+    max_val: f32,
     win_levels: Vec<WindowLevel>,
     pd_bytes: Vec<u8>,
 }
 
 impl PixelDataSliceInfo {
     #[must_use]
-    pub fn image_pos(&self) -> &[f64; 3] {
+    pub fn image_pos(&self) -> &[f32; 3] {
         &self.image_pos
     }
 
@@ -108,10 +108,10 @@ impl PixelDataSliceInfo {
             intercept: None,
             unit: String::new(),
             patient_pos: String::new(),
-            image_pos: [0f64; 3],
-            patient_orientation: [0f64; 6],
-            min_val: 0f64,
-            max_val: 0f64,
+            image_pos: [0_f32; 3],
+            patient_orientation: [0_f32; 6],
+            min_val: 0_f32,
+            max_val: 0_f32,
             win_levels: Vec::with_capacity(0),
             pd_bytes: Vec::with_capacity(0),
         };
@@ -217,15 +217,16 @@ impl PixelDataSliceInfo {
             pdinfo.dcmroot().get_value_by_tag(&tags::WindowCenter)
         {
             for (i, val) in vals.into_iter().enumerate() {
+                let val = val as f32;
                 if let Some(winlevel) = pdinfo.win_levels.get_mut(i) {
                     winlevel.set_center(val);
                 } else {
                     pdinfo.win_levels.push(WindowLevel::new(
                         format!("winlevel_{i}"),
                         val,
-                        0.0f64,
-                        f64::MIN,
-                        f64::MAX,
+                        0.0_f32,
+                        f32::MIN,
+                        f32::MAX,
                     ));
                 }
             }
@@ -233,15 +234,16 @@ impl PixelDataSliceInfo {
         if let Some(RawValue::Doubles(vals)) = pdinfo.dcmroot().get_value_by_tag(&tags::WindowWidth)
         {
             for (i, val) in vals.into_iter().enumerate() {
+                let val = val as f32;
                 if let Some(winlevel) = pdinfo.win_levels.get_mut(i) {
                     winlevel.set_width(val);
                 } else {
                     pdinfo.win_levels.push(WindowLevel::new(
                         format!("winlevel_{i}"),
-                        0.0f64,
+                        0.0_f32,
                         val,
-                        f64::MIN,
-                        f64::MAX,
+                        f32::MIN,
+                        f32::MAX,
                     ));
                 }
             }
@@ -249,11 +251,11 @@ impl PixelDataSliceInfo {
         pdinfo.intercept = pdinfo
             .dcmroot()
             .get_value_by_tag(&tags::RescaleIntercept)
-            .and_then(|v| v.double());
+            .and_then(|v| v.double().map(|v| v as f32));
         pdinfo.slope = pdinfo
             .dcmroot()
             .get_value_by_tag(&tags::RescaleSlope)
-            .and_then(|v| v.double());
+            .and_then(|v| v.double().map(|v| v as f32));
         if let Some(val) = pdinfo
             .dcmroot()
             .get_value_by_tag(&tags::RescaleType)
@@ -278,10 +280,10 @@ impl PixelDataSliceInfo {
                 } else {
                     pdinfo.win_levels.push(WindowLevel::new(
                         val,
-                        0.0f64,
-                        0.0f64,
-                        f64::MIN,
-                        f64::MAX,
+                        0.0_f32,
+                        0.0_f32,
+                        f32::MIN,
+                        f32::MAX,
                     ));
                 }
             }
@@ -299,14 +301,18 @@ impl PixelDataSliceInfo {
             .get_value_by_tag(&tags::ImagePositionPatient)
         {
             if vals.len() <= pdinfo.image_pos.len() {
-                pdinfo.image_pos[..vals.len()].copy_from_slice(&vals[..]);
+                for (i, val) in vals.iter().enumerate() {
+                    pdinfo.image_pos[i] = *val as f32;
+                }
             }
         }
         if let Some(RawValue::Doubles(vals)) =
             pdinfo.dcmroot().get_value_by_tag(&tags::PatientOrientation)
         {
             if vals.len() <= pdinfo.patient_orientation.len() {
-                pdinfo.patient_orientation[..vals.len()].copy_from_slice(&vals[..]);
+                for (i, val) in vals.iter().enumerate() {
+                    pdinfo.patient_orientation[i] = *val as f32;
+                }
             }
         }
 
@@ -480,12 +486,12 @@ impl PixelDataSliceInfo {
     }
 
     #[must_use]
-    pub fn slope(&self) -> Option<f64> {
+    pub fn slope(&self) -> Option<f32> {
         self.slope
     }
 
     #[must_use]
-    pub fn intercept(&self) -> Option<f64> {
+    pub fn intercept(&self) -> Option<f32> {
         self.intercept
     }
 
@@ -495,20 +501,20 @@ impl PixelDataSliceInfo {
     }
 
     #[must_use]
-    pub fn min_val(&self) -> f64 {
+    pub fn min_val(&self) -> f32 {
         self.min_val
     }
 
     #[must_use]
-    pub fn max_val(&self) -> f64 {
+    pub fn max_val(&self) -> f32 {
         self.max_val
     }
 
-    pub fn set_min_val(&mut self, min_val: f64) {
+    pub fn set_min_val(&mut self, min_val: f32) {
         self.min_val = min_val;
     }
 
-    pub fn set_max_val(&mut self, max_val: f64) {
+    pub fn set_max_val(&mut self, max_val: f32) {
         self.max_val = max_val;
     }
 

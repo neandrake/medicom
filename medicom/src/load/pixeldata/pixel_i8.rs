@@ -47,8 +47,8 @@ impl PixelDataSliceI8 {
         let interp_as_rgb =
             info.photo_interp().is_some_and(PhotoInterp::is_rgb) && info.samples_per_pixel() == 3;
 
-        info.set_min_val(f64::from(*buffer.iter().min().unwrap_or(&0)));
-        info.set_max_val(f64::from(*buffer.iter().max().unwrap_or(&0)));
+        info.set_min_val(*buffer.iter().min().unwrap_or(&0) as f32);
+        info.set_max_val(*buffer.iter().max().unwrap_or(&0) as f32);
 
         Self {
             info,
@@ -79,7 +79,7 @@ impl PixelDataSliceI8 {
     }
 
     #[must_use]
-    pub fn rescale(&self, val: f64) -> f64 {
+    pub fn rescale(&self, val: f32) -> f32 {
         if let Some(slope) = self.info().slope() {
             if let Some(intercept) = self.info().intercept() {
                 return val * slope + intercept;
@@ -99,10 +99,10 @@ impl PixelDataSliceI8 {
                 || {
                     WindowLevel::new(
                         "Default".to_string(),
-                        0_f64,
-                        f64::from(i8::MAX),
-                        f64::from(i8::MIN),
-                        f64::from(i8::MAX),
+                        0_f32,
+                        i8::MAX as f32,
+                        i8::MIN as f32,
+                        i8::MAX as f32,
                     )
                 },
                 |winlevel| {

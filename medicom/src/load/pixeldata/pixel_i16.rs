@@ -14,11 +14,11 @@
    limitations under the License.
 */
 
-use crate::load::pixeldata::{
+use crate::load::{pixeldata::{
     pdinfo::{PixelDataSliceInfo, I16_SIZE, I8_SIZE, U16_SIZE},
     pdwinlevel::WindowLevel,
     PhotoInterp, PixelDataError,
-};
+}, EPSILON_F32};
 
 pub struct PixelDataSliceI16 {
     info: PixelDataSliceInfo,
@@ -71,15 +71,15 @@ impl PixelDataSliceI16 {
         pdinfo.set_min_val(min.into());
         pdinfo.set_max_val(max.into());
 
-        let minmax_width = f64::from(max) - f64::from(min);
-        let minmax_center = f64::from(min) + minmax_width / 2_f64;
+        let minmax_width = f32::from(max) - f32::from(min);
+        let minmax_center = f32::from(min) + minmax_width / 2_f32;
         let mut already_has_minmax = false;
         for winlevel in pdinfo.win_levels_mut() {
-            winlevel.set_out_min(f64::from(i16::MIN));
-            winlevel.set_out_max(f64::from(i16::MAX));
+            winlevel.set_out_min(f32::from(i16::MIN));
+            winlevel.set_out_max(f32::from(i16::MAX));
 
-            let same_width = (winlevel.width() - minmax_width).abs() < 0.01;
-            let same_center = (winlevel.center() - minmax_center).abs() < 0.01;
+            let same_width = (winlevel.width() - minmax_width).abs() < EPSILON_F32;
+            let same_center = (winlevel.center() - minmax_center).abs() < EPSILON_F32;
             if same_width && same_center {
                 already_has_minmax = true;
             }
@@ -89,8 +89,8 @@ impl PixelDataSliceI16 {
                 "Min/Max".to_string(),
                 minmax_center,
                 minmax_width,
-                f64::from(i16::MIN),
-                f64::from(i16::MAX),
+                f32::from(i16::MIN),
+                f32::from(i16::MAX),
             ));
         }
         Self::new(pdinfo, buffer)
@@ -154,15 +154,15 @@ impl PixelDataSliceI16 {
         pdinfo.set_min_val(min.into());
         pdinfo.set_max_val(max.into());
 
-        let minmax_width = f64::from(max) - f64::from(min);
-        let minmax_center = f64::from(min) + minmax_width / 2_f64;
+        let minmax_width = f32::from(max) - f32::from(min);
+        let minmax_center = f32::from(min) + minmax_width / 2_f32;
         let mut already_has_minmax = false;
         for winlevel in pdinfo.win_levels_mut() {
-            winlevel.set_out_min(f64::from(i16::MIN));
-            winlevel.set_out_max(f64::from(i16::MAX));
+            winlevel.set_out_min(f32::from(i16::MIN));
+            winlevel.set_out_max(f32::from(i16::MAX));
 
-            let same_width = (winlevel.width() - minmax_width).abs() < 0.01;
-            let same_center = (winlevel.center() - minmax_center).abs() < 0.01;
+            let same_width = (winlevel.width() - minmax_width).abs() < EPSILON_F32;
+            let same_center = (winlevel.center() - minmax_center).abs() < EPSILON_F32;
             if same_width && same_center {
                 already_has_minmax = true;
             }
@@ -172,8 +172,8 @@ impl PixelDataSliceI16 {
                 "Min/Max".to_string(),
                 minmax_center,
                 minmax_width,
-                f64::from(i16::MIN),
-                f64::from(i16::MAX),
+                f32::from(i16::MIN),
+                f32::from(i16::MAX),
             ));
         }
         Ok(PixelDataSliceI16::new(pdinfo, buffer))
@@ -219,7 +219,7 @@ impl PixelDataSliceI16 {
     }
 
     #[must_use]
-    pub fn rescale(&self, val: f64) -> f64 {
+    pub fn rescale(&self, val: f32) -> f32 {
         if let Some(slope) = self.info().slope() {
             if let Some(intercept) = self.info().intercept() {
                 return val * slope + intercept;
@@ -239,10 +239,10 @@ impl PixelDataSliceI16 {
                 || {
                     WindowLevel::new(
                         "Default".to_string(),
-                        0_f64,
-                        f64::from(i16::MAX),
-                        f64::from(i16::MIN),
-                        f64::from(i16::MAX),
+                        0_f32,
+                        f32::from(i16::MAX),
+                        f32::from(i16::MIN),
+                        f32::from(i16::MAX),
                     )
                 },
                 |winlevel| {

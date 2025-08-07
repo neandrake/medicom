@@ -17,7 +17,7 @@
 pub mod imgvol;
 pub mod pixeldata;
 
-pub(crate) const EPSILON_F64: f64 = 0.01_f64;
+/// General epsilon when comparing f32s which should be valid for most units within DICOM.
 pub(crate) const EPSILON_F32: f32 = 0.01_f32;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -147,7 +147,7 @@ impl std::fmt::Display for VolAxis {
 #[derive(Debug)]
 pub struct VolPixel {
     pub coord: IndexVec,
-    pub r: f64,
-    pub g: f64,
-    pub b: f64,
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
 }

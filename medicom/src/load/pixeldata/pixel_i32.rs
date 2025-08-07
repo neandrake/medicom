@@ -14,11 +14,11 @@
    limitations under the License.
 */
 
-use crate::load::pixeldata::{
+use crate::load::{pixeldata::{
     pdinfo::{PixelDataSliceInfo, I32_SIZE, U32_SIZE},
     pdwinlevel::WindowLevel,
     PhotoInterp, PixelDataError,
-};
+}, EPSILON_F32};
 
 pub struct PixelDataSliceI32 {
     info: PixelDataSliceInfo,
@@ -88,18 +88,20 @@ impl PixelDataSliceI32 {
             }
         }
 
-        pdinfo.set_min_val(min.into());
-        pdinfo.set_max_val(max.into());
+        let min = min as f32;
+        let max = max as f32;
+        pdinfo.set_min_val(min);
+        pdinfo.set_max_val(max);
 
-        let minmax_width = f64::from(max) - f64::from(min);
-        let minmax_center = f64::from(min) + minmax_width / 2_f64;
+        let minmax_width = max - min;
+        let minmax_center = min + minmax_width / 2_f32;
         let mut already_has_minmax = false;
         for winlevel in pdinfo.win_levels_mut() {
-            winlevel.set_out_min(f64::from(i32::MIN));
-            winlevel.set_out_max(f64::from(i32::MAX));
+            winlevel.set_out_min(i32::MIN as f32);
+            winlevel.set_out_max(i32::MAX as f32);
 
-            let same_width = (winlevel.width() - minmax_width).abs() < 0.01;
-            let same_center = (winlevel.center() - minmax_center).abs() < 0.01;
+            let same_width = (winlevel.width() - minmax_width).abs() < EPSILON_F32;
+            let same_center = (winlevel.center() - minmax_center).abs() < EPSILON_F32;
             if same_width && same_center {
                 already_has_minmax = true;
             }
@@ -109,8 +111,8 @@ impl PixelDataSliceI32 {
                 "Min/Max".to_string(),
                 minmax_center,
                 minmax_width,
-                f64::from(i32::MIN),
-                f64::from(i32::MAX),
+                i32::MIN as f32,
+                i32::MAX as f32,
             ));
         }
         Ok(PixelDataSliceI32::new(pdinfo, buffer))
@@ -169,7 +171,7 @@ impl PixelDataSliceI32 {
     }
 
     #[must_use]
-    pub fn rescale(&self, val: f64) -> f64 {
+    pub fn rescale(&self, val: f32) -> f32 {
         if let Some(slope) = self.info().slope() {
             if let Some(intercept) = self.info().intercept() {
                 return val * slope + intercept;
@@ -189,10 +191,10 @@ impl PixelDataSliceI32 {
                 || {
                     WindowLevel::new(
                         "Default".to_string(),
-                        0_f64,
-                        f64::from(i32::MAX),
-                        f64::from(i32::MIN),
-                        f64::from(i32::MAX),
+                        0_f32,
+                        i32::MAX as f32,
+                        i32::MIN as f32,
+                        i32::MAX as f32,
                     )
                 },
                 |winlevel| {

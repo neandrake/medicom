@@ -19,15 +19,15 @@
 #[derive(Debug)]
 pub struct WindowLevel {
     name: String,
-    center: f64,
-    width: f64,
-    out_min: f64,
-    out_max: f64,
+    center: f32,
+    width: f32,
+    out_min: f32,
+    out_max: f32,
 }
 
 impl WindowLevel {
     #[must_use]
-    pub fn new(name: String, center: f64, width: f64, out_min: f64, out_max: f64) -> Self {
+    pub fn new(name: String, center: f32, width: f32, out_min: f32, out_max: f32) -> Self {
         Self {
             name,
             center,
@@ -47,43 +47,43 @@ impl WindowLevel {
     }
 
     #[must_use]
-    pub fn center(&self) -> f64 {
+    pub fn center(&self) -> f32 {
         self.center
     }
 
-    pub fn set_center(&mut self, center: f64) {
+    pub fn set_center(&mut self, center: f32) {
         self.center = center;
     }
 
     #[must_use]
-    pub fn width(&self) -> f64 {
+    pub fn width(&self) -> f32 {
         self.width
     }
 
-    pub fn set_width(&mut self, width: f64) {
+    pub fn set_width(&mut self, width: f32) {
         self.width = width;
     }
 
     #[must_use]
-    pub fn out_min(&self) -> f64 {
+    pub fn out_min(&self) -> f32 {
         self.out_min
     }
 
-    pub fn set_out_min(&mut self, out_min: f64) {
+    pub fn set_out_min(&mut self, out_min: f32) {
         self.out_min = out_min;
     }
 
     #[must_use]
-    pub fn out_max(&self) -> f64 {
+    pub fn out_max(&self) -> f32 {
         self.out_max
     }
 
-    pub fn set_out_max(&mut self, out_max: f64) {
+    pub fn set_out_max(&mut self, out_max: f32) {
         self.out_max = out_max;
     }
 
     #[must_use]
-    pub fn with_out(&self, out_min: f64, out_max: f64) -> Self {
+    pub fn with_out(&self, out_min: f32, out_max: f32) -> Self {
         Self::new(
             self.name().to_string(),
             self.center(),
@@ -95,16 +95,16 @@ impl WindowLevel {
 
     /// Converts the given value to this window/level, per Part 3, Section C.11.2.1.2.1.
     #[must_use]
-    pub fn apply(&self, value: f64) -> f64 {
-        let center = self.center - 0.5_f64;
-        let width = self.width - 1_f64;
-        let half_width = width / 2_f64;
+    pub fn apply(&self, value: f32) -> f32 {
+        let center = self.center - 0.5_f32;
+        let width = self.width - 1_f32;
+        let half_width = width / 2_f32;
         if value <= center - half_width {
             self.out_min
         } else if value > center + half_width {
             self.out_max
         } else {
-            ((value - center) / width + 0.5f64) * (self.out_max - self.out_min) + self.out_min
+            ((value - center) / width + 0.5_f32) * (self.out_max - self.out_min) + self.out_min
         }
     }
 }
@@ -117,17 +117,17 @@ mod tests {
     pub fn test_winlevel() {
         let wl = WindowLevel::new(
             String::new(),
-            100f64,
-            200f64,
-            f64::from(u8::MIN),
-            f64::from(u8::MAX),
+            100_f32,
+            200_f32,
+            f32::from(u8::MIN),
+            f32::from(u8::MAX),
         );
 
-        let v = wl.apply(0f64) as u8;
+        let v = wl.apply(0_f32) as u8;
         assert_eq!(u8::MIN, v);
-        let v = wl.apply(200f64) as u8;
+        let v = wl.apply(200_f32) as u8;
         assert_eq!(u8::MAX, v);
-        let v = wl.apply(100f64) as u8;
+        let v = wl.apply(100_f32) as u8;
         assert_eq!(u8::MAX / 2 + 1, v);
     }
 }

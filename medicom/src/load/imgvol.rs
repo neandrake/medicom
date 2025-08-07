@@ -28,7 +28,7 @@ use crate::{
             pixel_u32::PixelDataSliceU32, pixel_u8::PixelDataSliceU8, BitsAlloc, PhotoInterp,
             PixelDataError,
         },
-        IndexVec, VolAxis, VolDims, VolPixel, EPSILON_F64,
+        IndexVec, VolAxis, VolDims, VolPixel, EPSILON_F32,
     },
 };
 
@@ -46,8 +46,8 @@ pub struct ImageVolume {
     stride: usize,
     is_rgb: bool,
     pixel_pad: Option<i16>,
-    slope: f64,
-    intercept: f64,
+    slope: f32,
+    intercept: f32,
     samples_per_pixel: usize,
     photo_interp: PhotoInterp,
     min_val: i16,
@@ -69,8 +69,8 @@ impl Default for ImageVolume {
             stride: 0usize,
             is_rgb: false,
             pixel_pad: None,
-            slope: 1f64,
-            intercept: 0f64,
+            slope: 1_f32,
+            intercept: 0_f32,
             samples_per_pixel: 0usize,
             photo_interp: PhotoInterp::Unsupported("Unspecified".to_owned()),
             min_val: i16::MAX,
@@ -136,12 +136,12 @@ impl ImageVolume {
     }
 
     #[must_use]
-    pub fn slope(&self) -> f64 {
+    pub fn slope(&self) -> f32 {
         self.slope
     }
 
     #[must_use]
-    pub fn intercept(&self) -> f64 {
+    pub fn intercept(&self) -> f32 {
         self.intercept
     }
 
@@ -156,7 +156,7 @@ impl ImageVolume {
     }
 
     #[must_use]
-    pub fn rescale(&self, val: f64) -> f64 {
+    pub fn rescale(&self, val: f32) -> f32 {
         val * self.slope + self.intercept
     }
 
@@ -196,7 +196,7 @@ impl ImageVolume {
     }
 
     /// Creates a `WindowLevel` using the minimum and maximum values occuring in this volume to
-    /// compute the center and width. The out range is `f64::MIN` to `f64::MAX`.
+    /// compute the center and width. The out range is `f32::MIN` to `f32::MAX`.
     #[must_use]
     pub fn minmax_winlevel(&self) -> WindowLevel {
         let min = self.min_val();
@@ -205,10 +205,10 @@ impl ImageVolume {
         let center = min + width / 2;
         WindowLevel::new(
             String::new(),
-            self.rescale(f64::from(center)),
-            self.rescale(f64::from(width)),
-            f64::MIN,
-            f64::MAX,
+            self.rescale(f32::from(center)),
+            self.rescale(f32::from(width)),
+            f32::MIN,
+            f32::MAX,
         )
     }
 
@@ -245,8 +245,8 @@ impl ImageVolume {
         let stride = pdinfo.stride();
         let is_rgb = pdinfo.is_rgb();
         let pixel_pad = pdinfo.pixel_pad().map(|v| v as i16);
-        let slope = pdinfo.slope().unwrap_or(1f64);
-        let intercept = pdinfo.intercept().unwrap_or(0f64);
+        let slope = pdinfo.slope().unwrap_or(1_f32);
+        let intercept = pdinfo.intercept().unwrap_or(0_f32);
         let samples_per_pixel = usize::from(pdinfo.samples_per_pixel());
 
         if self.infos.is_empty() {
@@ -299,13 +299,13 @@ impl ImageVolume {
                     ),
                 ));
             }
-            if (slope - self.slope).abs() > EPSILON_F64 {
+            if (slope - self.slope).abs() > EPSILON_F32 {
                 return Err(PixelDataError::InconsistentSliceFormat(
                     sop_uid,
                     format!("Slope mismatch: {slope}, other: {}", self.slope),
                 ));
             }
-            if (intercept - self.intercept).abs() > EPSILON_F64 {
+            if (intercept - self.intercept).abs() > EPSILON_F32 {
                 return Err(PixelDataError::InconsistentSliceFormat(
                     sop_uid,
                     format!("Intercept mismatch: {intercept}, other: {}", self.intercept),
@@ -411,13 +411,13 @@ impl ImageVolume {
             let red = buffer[pixel_count];
             let green = buffer[pixel_count + self.stride];
             let blue = buffer[pixel_count + self.stride * 2];
-            (f64::from(red), f64::from(green), f64::from(blue))
+            (f32::from(red), f32::from(green), f32::from(blue))
         } else {
             let applied_val = buffer
                 .get(pixel_count)
                 .copied()
-                .map(f64::from)
-                .or_else(|| self.pixel_pad().map(f64::from))
+                .map(f32::from)
+                .or_else(|| self.pixel_pad().map(f32::from))
                 .map(|v| self.rescale(v))
                 .unwrap_or_default();
             let val = applied_val;

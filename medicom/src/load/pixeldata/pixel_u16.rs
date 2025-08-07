@@ -154,7 +154,7 @@ impl PixelDataSliceU16 {
     }
 
     #[must_use]
-    pub fn rescale(&self, val: f64) -> f64 {
+    pub fn rescale(&self, val: f32) -> f32 {
         if let Some(slope) = self.info().slope() {
             if let Some(intercept) = self.info().intercept() {
                 return val * slope + intercept;
@@ -174,10 +174,10 @@ impl PixelDataSliceU16 {
                 || {
                     WindowLevel::new(
                         "Default".to_string(),
-                        f64::from(u16::MAX) / 2_f64,
-                        f64::from(u16::MAX) / 2_f64,
-                        f64::from(u16::MIN),
-                        f64::from(u16::MAX),
+                        u16::MAX as f32 / 2_f32,
+                        u16::MAX as f32 / 2_f32,
+                        u16::MIN as f32,
+                        u16::MAX as f32,
                     )
                 },
                 |winlevel| {
