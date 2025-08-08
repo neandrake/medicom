@@ -29,7 +29,10 @@ pub mod pixel_u32;
 pub mod pixel_u8;
 
 #[derive(Error, Debug)]
-pub enum PixelDataError {
+pub enum LoadError {
+    #[error("Not DICOM")]
+    NotDICOM,
+
     #[error("No Pixel Data bytes found")]
     MissingPixelData,
 
@@ -71,6 +74,15 @@ pub enum PixelDataError {
         #[from]
         source: std::num::TryFromIntError,
     },
+
+    #[error("{0}")]
+    LockError(String),
+}
+
+impl From<std::io::Error> for LoadError {
+    fn from(value: std::io::Error) -> Self {
+        LoadError::from(ParseError::from(value))
+    }
 }
 
 /// Supported values of Photometric Interpretation.

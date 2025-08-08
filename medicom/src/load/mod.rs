@@ -14,11 +14,207 @@
    limitations under the License.
 */
 
+use std::{
+    io::{BufReader, Read},
+    marker::PhantomData,
+    sync::RwLock,
+};
+
+use imgvol::ImageVolume;
+use pixeldata::LoadError;
+use workspace::Workspace;
+
+use crate::{
+    core::{dcmobject::DicomRoot, read::ParserBuilder},
+    dict::stdlookup::STANDARD_DICOM_DICTIONARY,
+};
+
 pub mod imgvol;
 pub mod pixeldata;
+pub mod workspace;
 
 /// General epsilon when comparing f32s which should be valid for most units within DICOM.
 pub(crate) const EPSILON_F32: f32 = 0.01_f32;
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug)]
+pub struct LoadableKey {
+    key: String,
+}
+
+impl LoadableKey {
+    pub fn new(series_uid: String) -> Self {
+        Self { key: series_uid }
+    }
+
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+}
+
+impl From<&str> for LoadableKey {
+    fn from(value: &str) -> Self {
+        LoadableKey::new(value.to_owned())
+    }
+}
+
+impl From<&String> for LoadableKey {
+    fn from(value: &String) -> Self {
+        LoadableKey::new(value.to_owned())
+    }
+}
+
+impl std::fmt::Display for LoadableKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.key)
+    }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Debug)]
+pub struct LoadableChunkKey {
+    chunk_key: String,
+}
+
+impl LoadableChunkKey {
+    pub fn new(chunk_key: String) -> Self {
+        Self { chunk_key }
+    }
+
+    pub fn chunk_key(&self) -> &String {
+        &self.chunk_key
+    }
+}
+
+impl From<&str> for LoadableChunkKey {
+    fn from(value: &str) -> Self {
+        LoadableChunkKey::new(value.to_owned())
+    }
+}
+
+impl From<&String> for LoadableChunkKey {
+    fn from(value: &String) -> Self {
+        LoadableChunkKey::new(value.to_owned())
+    }
+}
+
+impl std::fmt::Display for LoadableChunkKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.chunk_key)
+    }
+}
+
+/// Provides the datasets for loading into a volume.
+pub trait SeriesSource<R: Read> {
+    /// The `DatasetKey` this `DatasetSource` is for.
+    fn loadable_key(&self) -> LoadableKey;
+    /// The list of SOPs within this Series.
+    fn chunks(&self) -> Result<Vec<LoadableChunkKey>, LoadError>;
+    /// Retrieve the dataset stream for a `SopKey`.
+    ///
+    /// # Errors
+    /// - `LoadError` if there's failure establishing the dataset stream.
+    fn chunk_stream(&self, chunk_key: &LoadableChunkKey) -> Result<R, LoadError>;
+}
+
+/// Provides implementations for loading `SeriesSource` into `Workspace`.
+pub struct Loader<R: Read> {
+    _phantom: PhantomData<R>,
+}
+
+impl<R: Read> Loader<R> {
+    // Deriving Default doesn't seem to work properly with the template <R>.
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self {
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Loads this source into a `Workspace`.
+    pub fn load_into(
+        &self,
+        source: &impl SeriesSource<R>,
+        workspace: &RwLock<Workspace>,
+        progress: Option<&RwLock<SeriesSourceLoadResult>>,
+    ) -> Result<(), LoadError> {
+        for chunk_key in source.chunks()? {
+            let mut workspace = match workspace.write() {
+                Err(e) => return Err(LoadError::LockError(format!("{e:?}"))),
+                Ok(workspace) => workspace,
+            };
+
+            let imgvol = if let Some(imgvol) = workspace.volume_mut(&source.loadable_key()) {
+                imgvol
+            } else {
+                workspace.initialize_vol(source.loadable_key())
+            };
+            let success = self.load_chunk(source, imgvol, &chunk_key).is_ok();
+            if let Some(progress) = progress {
+                if let Ok(mut progress) = progress.write() {
+                    if success {
+                        progress.add_loaded(chunk_key);
+                    } else {
+                        progress.add_failed(chunk_key);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn load_chunk(
+        &self,
+        source: &impl SeriesSource<R>,
+        imgvol: &mut ImageVolume,
+        chunk_key: &LoadableChunkKey,
+    ) -> Result<(), LoadError> {
+        let ds = source.chunk_stream(chunk_key)?;
+        let dataset = BufReader::with_capacity(1024 * 1024, ds);
+        let mut parser = ParserBuilder::default().build(dataset, &STANDARD_DICOM_DICTIONARY);
+        let dcmroot = DicomRoot::parse(&mut parser)?.ok_or(LoadError::NotDICOM)?;
+        imgvol.load_slice(dcmroot)?;
+        Ok(())
+    }
+}
+
+pub struct SeriesSourceLoadResult {
+    total: Vec<LoadableChunkKey>,
+    loaded: Vec<LoadableChunkKey>,
+    failed: Vec<LoadableChunkKey>,
+}
+
+impl SeriesSourceLoadResult {
+    pub fn new(total: Vec<LoadableChunkKey>) -> Self {
+        Self {
+            total,
+            loaded: Vec::new(),
+            failed: Vec::new(),
+        }
+    }
+
+    pub fn total(&self) -> &Vec<LoadableChunkKey> {
+        &self.total
+    }
+
+    pub fn add_loaded(&mut self, loaded: LoadableChunkKey) {
+        self.loaded.push(loaded);
+    }
+
+    pub fn add_failed(&mut self, failed: LoadableChunkKey) {
+        self.failed.push(failed);
+    }
+
+    pub fn num_total(&self) -> usize {
+        self.total.len()
+    }
+
+    pub fn num_loaded(&self) -> usize {
+        self.loaded.len()
+    }
+
+    pub fn num_failed(&self) -> usize {
+        self.failed.len()
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct IndexVec {

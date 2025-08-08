@@ -17,7 +17,7 @@
 use crate::load::{pixeldata::{
     pdinfo::{PixelDataSliceInfo, I16_SIZE, I8_SIZE, U16_SIZE},
     pdwinlevel::WindowLevel,
-    PhotoInterp, PixelDataError,
+    PhotoInterp, LoadError,
 }, EPSILON_F32};
 
 pub struct PixelDataSliceI16 {
@@ -100,7 +100,7 @@ impl PixelDataSliceI16 {
     ///
     /// # Errors
     /// - Any errors interpreting little/big -endian bytes as 16bit numbers.
-    pub fn from_mono_16bit(mut pdinfo: PixelDataSliceInfo) -> Result<Self, PixelDataError> {
+    pub fn from_mono_16bit(mut pdinfo: PixelDataSliceInfo) -> Result<Self, LoadError> {
         let num_frames = usize::try_from(pdinfo.num_frames()).unwrap_or(1);
         let samples = usize::from(pdinfo.samples_per_pixel());
         let len = usize::from(pdinfo.cols()) * usize::from(pdinfo.rows()) * num_frames;

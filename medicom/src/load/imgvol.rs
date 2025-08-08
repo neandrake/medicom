@@ -26,7 +26,7 @@ use crate::{
             pdinfo::PixelDataSliceInfo, pdwinlevel::WindowLevel, pixel_i16::PixelDataSliceI16,
             pixel_i32::PixelDataSliceI32, pixel_u16::PixelDataSliceU16,
             pixel_u32::PixelDataSliceU32, pixel_u8::PixelDataSliceU8, BitsAlloc, PhotoInterp,
-            PixelDataError,
+            LoadError,
         },
         IndexVec, VolAxis, VolDims, VolPixel, EPSILON_F32,
     },
@@ -219,7 +219,7 @@ impl ImageVolume {
     /// - `PixelValueError` if the pixel values fail to parse into `i16`.
     /// - `InconsistentSliceFormat` if the slice is not in the same format as other slices already
     ///   loaded in to this volume.
-    pub fn load_slice(&mut self, dcmroot: DicomRoot) -> Result<(), PixelDataError> {
+    pub fn load_slice(&mut self, dcmroot: DicomRoot) -> Result<(), LoadError> {
         let sop_uid = dcmroot.sop_instance_id()?;
         let series_uid = dcmroot.series_instance_id()?;
 
@@ -261,7 +261,7 @@ impl ImageVolume {
             self.samples_per_pixel = samples_per_pixel;
         } else {
             if series_uid != self.series_uid {
-                return Err(PixelDataError::InconsistentSliceFormat(
+                return Err(LoadError::InconsistentSliceFormat(
                     sop_uid,
                     format!(
                         "SeriesInstanceUID mismatch, this: {series_uid}, other: {}",
@@ -270,7 +270,7 @@ impl ImageVolume {
                 ));
             }
             if !self.dims.matches(&dims) {
-                return Err(PixelDataError::InconsistentSliceFormat(
+                return Err(LoadError::InconsistentSliceFormat(
                     sop_uid,
                     format!("Dimensions mismatch, this: {dims}, other: {}", self.dims),
                 ));
@@ -279,19 +279,19 @@ impl ImageVolume {
                 self.dims.inc_z_count();
             }
             if stride != self.stride {
-                return Err(PixelDataError::InconsistentSliceFormat(
+                return Err(LoadError::InconsistentSliceFormat(
                     sop_uid,
                     format!("Stride mismatch, this: {stride}, other: {}", self.stride),
                 ));
             }
             if is_rgb != self.is_rgb {
-                return Err(PixelDataError::InconsistentSliceFormat(
+                return Err(LoadError::InconsistentSliceFormat(
                     sop_uid,
                     format!("RGB mismatch, this: {is_rgb}, other: {}", self.is_rgb),
                 ));
             }
             if pixel_pad != self.pixel_pad {
-                return Err(PixelDataError::InconsistentSliceFormat(
+                return Err(LoadError::InconsistentSliceFormat(
                     sop_uid,
                     format!(
                         "Pixel Padding mismatch, this: {pixel_pad:?}, other: {:?}",
@@ -300,19 +300,19 @@ impl ImageVolume {
                 ));
             }
             if (slope - self.slope).abs() > EPSILON_F32 {
-                return Err(PixelDataError::InconsistentSliceFormat(
+                return Err(LoadError::InconsistentSliceFormat(
                     sop_uid,
                     format!("Slope mismatch: {slope}, other: {}", self.slope),
                 ));
             }
             if (intercept - self.intercept).abs() > EPSILON_F32 {
-                return Err(PixelDataError::InconsistentSliceFormat(
+                return Err(LoadError::InconsistentSliceFormat(
                     sop_uid,
                     format!("Intercept mismatch: {intercept}, other: {}", self.intercept),
                 ));
             }
             if samples_per_pixel != self.samples_per_pixel {
-                return Err(PixelDataError::InconsistentSliceFormat(
+                return Err(LoadError::InconsistentSliceFormat(
                     sop_uid,
                     format!(
                         "Samples per Pixel mismatch: {samples_per_pixel}, other: {}",
@@ -337,7 +337,7 @@ impl ImageVolume {
                 }
             }
             Ok(_existing) => {
-                return Err(PixelDataError::InconsistentSliceFormat(
+                return Err(LoadError::InconsistentSliceFormat(
                     loaded.0.sop_instance_id(),
                     "Multiple slices in the same z-pos".to_owned(),
                 ))
@@ -364,9 +364,9 @@ impl ImageVolume {
     /// Loads the PixelData for the given slice. The pixel values will be trunacted to `i16`.
     fn load_pixel_data(
         pdinfo: PixelDataSliceInfo,
-    ) -> Result<(PixelDataSliceInfo, Vec<i16>), PixelDataError> {
+    ) -> Result<(PixelDataSliceInfo, Vec<i16>), LoadError> {
         match (pdinfo.bits_alloc(), pdinfo.is_rgb()) {
-            (BitsAlloc::Unsupported(val), _) => Err(PixelDataError::InvalidBitsAlloc(*val)),
+            (BitsAlloc::Unsupported(val), _) => Err(LoadError::InvalidBitsAlloc(*val)),
             (BitsAlloc::Eight, true) => Ok(PixelDataSliceU8::from_rgb_8bit(pdinfo).into_i16()),
             (BitsAlloc::Eight, false) => {
                 Ok(PixelDataSliceI16::from_mono_8bit(pdinfo).into_buffer())
@@ -390,9 +390,9 @@ impl ImageVolume {
     /// - If the x,y,z coordinate is invalid, either by being outside the image dimensions, or if
     ///   the Planar Configuration and Samples per Pixel are set up such that beginning of RGB
     ///   values must occur at specific indices.
-    pub fn get_pixel(&self, coord: IndexVec) -> Result<VolPixel, PixelDataError> {
+    pub fn get_pixel(&self, coord: IndexVec) -> Result<VolPixel, LoadError> {
         let Some(buffer) = self.slices().get(coord.z) else {
-            return Err(PixelDataError::InvalidDims(format!(
+            return Err(LoadError::InvalidDims(format!(
                 "Invalid z-pos: {}",
                 coord.z
             )));
@@ -404,7 +404,7 @@ impl ImageVolume {
         if pixel_count >= buffer.len()
             || (self.is_rgb && pixel_count + self.stride * 2 >= buffer.len())
         {
-            return Err(PixelDataError::InvalidPixelSource(pixel_count));
+            return Err(LoadError::InvalidPixelSource(pixel_count));
         }
 
         let (r, g, b) = if self.is_rgb {

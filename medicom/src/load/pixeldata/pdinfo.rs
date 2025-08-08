@@ -22,7 +22,7 @@ use crate::{
     },
     dict::tags,
     load::{
-        pixeldata::{pdwinlevel::WindowLevel, BitsAlloc, PhotoInterp, PixelDataError},
+        pixeldata::{pdwinlevel::WindowLevel, BitsAlloc, PhotoInterp, LoadError},
         DicomVec, IndexVec, VolDims,
     },
 };
@@ -82,9 +82,9 @@ impl PixelDataSliceInfo {
     /// Process a DICOM object to extract and validate in preparation for loading the image data.
     ///
     /// # Errors
-    /// - `PixelDataError` if validation of image data dicom elements fails. See `Self::validate`.
+    /// - `LoadError` if validation of image data dicom elements fails. See `Self::validate`.
     #[allow(clippy::too_many_lines)] // No great way to shrink this down.
-    pub(crate) fn process(dcmroot: DicomRoot) -> Result<Self, PixelDataError> {
+    pub(crate) fn process(dcmroot: DicomRoot) -> Result<Self, LoadError> {
         let big_endian = dcmroot.ts().big_endian();
         let mut pdinfo = Self {
             dcmroot,
@@ -598,21 +598,21 @@ impl PixelDataSliceInfo {
     /// # Errors
     /// - This function returns errors in the validation of values parsed from DICOM elements via
     ///   `PixelDataInfo::process_dcm_parser`.
-    pub fn validate(&mut self) -> Result<(), PixelDataError> {
+    pub fn validate(&mut self) -> Result<(), LoadError> {
         if self.pd_bytes.is_empty() {
-            return Err(PixelDataError::MissingPixelData);
+            return Err(LoadError::MissingPixelData);
         }
 
         if self.cols == 0 || self.rows == 0 {
-            return Err(PixelDataError::InvalidSize(self.cols, self.rows));
+            return Err(LoadError::InvalidSize(self.cols, self.rows));
         }
 
         if self.vr != &vr::OB && self.vr != &vr::OW {
-            return Err(PixelDataError::InvalidVR(self.vr));
+            return Err(LoadError::InvalidVR(self.vr));
         }
 
         if let BitsAlloc::Unsupported(val) = self.bits_alloc {
-            return Err(PixelDataError::InvalidBitsAlloc(val));
+            return Err(LoadError::InvalidBitsAlloc(val));
         }
 
         // BitsStored will generally be the same value as BitsAllocated.
@@ -630,7 +630,7 @@ impl PixelDataSliceInfo {
             {
                 // RGB must use 3 Samples Per Pixel.
                 // MONOCHROME1/2 must use 1 Sample Per Pixel.
-                return Err(PixelDataError::InvalidPhotoInterpSamples(
+                return Err(LoadError::InvalidPhotoInterpSamples(
                     pi.clone(),
                     self.samples_per_pixel,
                 ));
@@ -641,7 +641,7 @@ impl PixelDataSliceInfo {
         if !VolDims::is_valid_dim(self.slice_thickness)
             && !VolDims::is_valid_dim(self.spacing_between_slices)
         {
-            return Err(PixelDataError::InvalidDims(format!(
+            return Err(LoadError::InvalidDims(format!(
                 "SliceThickness and SpacingBetweenSlices are both invalid: {}, {}",
                 self.slice_thickness, self.spacing_between_slices
             )));
@@ -651,7 +651,7 @@ impl PixelDataSliceInfo {
         if !VolDims::is_valid_dim(self.pixel_spacing.0)
             || !VolDims::is_valid_dim(self.pixel_spacing.1)
         {
-            return Err(PixelDataError::InvalidDims(format!(
+            return Err(LoadError::InvalidDims(format!(
                 "PixelSpacing is invalid: {:?}",
                 self.pixel_spacing
             )));

@@ -18,7 +18,7 @@ use crate::load::pixeldata::{
     pdinfo::{PixelDataSliceInfo, I32_SIZE, U32_SIZE},
     pdslice::PixelDataSlice,
     pdwinlevel::WindowLevel,
-    PhotoInterp, PixelDataError,
+    PhotoInterp, LoadError,
 };
 
 pub struct PixelDataSliceU32 {
@@ -46,7 +46,7 @@ impl PixelDataSliceU32 {
     ///
     /// # Errors
     /// - I/O errors reading the data.
-    pub fn from_rgb_32bit(mut pdinfo: PixelDataSliceInfo) -> Result<Self, PixelDataError> {
+    pub fn from_rgb_32bit(mut pdinfo: PixelDataSliceInfo) -> Result<Self, LoadError> {
         let num_frames = usize::try_from(pdinfo.num_frames()).unwrap_or(1);
         let samples = usize::from(pdinfo.samples_per_pixel());
         let len = usize::from(pdinfo.cols()) * usize::from(pdinfo.rows()) * num_frames;
@@ -121,11 +121,11 @@ impl PixelDataSliceU32 {
     ///
     /// # Errors
     /// - `PixelValueError` if unable to convert the `u32` into `i16`.
-    pub fn into_i16(self) -> Result<(PixelDataSliceInfo, Vec<i16>), PixelDataError> {
+    pub fn into_i16(self) -> Result<(PixelDataSliceInfo, Vec<i16>), LoadError> {
         let mut buffer: Vec<i16> = Vec::with_capacity(self.buffer.len());
         for v in &self.buffer {
             buffer.push(
-                i16::try_from(*v).map_err(|e| PixelDataError::PixelValueError { source: e })?,
+                i16::try_from(*v).map_err(|e| LoadError::PixelValueError { source: e })?,
             );
         }
         Ok((self.info, buffer))

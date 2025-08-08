@@ -16,24 +16,21 @@
 
 //! This command opens a viewer for a DICOM image.
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use egui::{
     generate_loader_id,
-    load::{ImageLoader, ImagePoll, LoadError},
-    mutex::Mutex,
-    ColorImage, Context, Margin, SizeHint,
+    load::{ImageLoader, ImagePoll},
+    ColorImage, Margin, SizeHint,
 };
-use medicom::{
-    core::{dcmobject::DicomRoot, read::ParserBuilder},
-    dict::stdlookup::STANDARD_DICOM_DICTIONARY,
-    load::{imgvol::ImageVolume, IndexVec, VolAxis},
+use medicom::load::{
+    imgvol::ImageVolume, pixeldata::LoadError, workspace::Workspace, IndexVec, LoadableChunkKey,
+    LoadableKey, Loader, SeriesSource, SeriesSourceLoadResult, VolAxis,
 };
 use std::{
-    collections::{HashMap, HashSet},
     fs::File,
-    io::BufReader,
+    ops::Deref,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, RwLock},
     thread,
 };
 
@@ -57,7 +54,7 @@ impl CommandApplication for ViewApp {
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 struct SliceKey {
-    series: SeriesKey,
+    series: LoadableKey,
     axis: VolAxis,
     slice_index: usize,
 }
@@ -79,13 +76,14 @@ impl From<&str> for SliceKey {
             series_uid = b;
         }
 
-        if let Some((a, b)) = series_uid.split_once("/") {
+        // The series_uid component could be a file path and include forward-slashes.
+        if let Some((a, b)) = series_uid.rsplit_once("/") {
             series_uid = a;
             slice_index = b.parse::<usize>().unwrap_or_default();
         }
 
         Self {
-            series: SeriesKey::from(series_uid),
+            series: LoadableKey::from(series_uid),
             axis,
             slice_index,
         }
@@ -95,15 +93,15 @@ impl From<&str> for SliceKey {
 impl From<(&str, VolAxis, usize)> for SliceKey {
     fn from(value: (&str, VolAxis, usize)) -> Self {
         Self {
-            series: SeriesKey::from(value.0),
+            series: LoadableKey::from(value.0),
             axis: value.1,
             slice_index: value.2,
         }
     }
 }
 
-impl From<(&SeriesKey, VolAxis, usize)> for SliceKey {
-    fn from(value: (&SeriesKey, VolAxis, usize)) -> Self {
+impl From<(&LoadableKey, VolAxis, usize)> for SliceKey {
+    fn from(value: (&LoadableKey, VolAxis, usize)) -> Self {
         Self {
             series: value.0.clone(),
             axis: value.1,
@@ -118,104 +116,75 @@ impl std::fmt::Display for SliceKey {
     }
 }
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone)]
-struct SeriesKey {
-    series_uid: String,
+struct FlatFolderSeriesSource {
+    folder: PathBuf,
+    progress: RwLock<SeriesSourceLoadResult>,
 }
 
-impl From<&str> for SeriesKey {
-    fn from(value: &str) -> Self {
-        Self {
-            series_uid: value.to_string(),
+impl FlatFolderSeriesSource {
+    pub fn new(folder: PathBuf) -> Result<Self> {
+        let mut chunks = Vec::new();
+        if folder.is_file() {
+            chunks.push(LoadableChunkKey::new(folder.display().to_string()));
+        } else {
+            let files = folder.read_dir().map_err(LoadError::from)?;
+            for file in files {
+                let file = file.map_err(LoadError::from)?.path();
+                chunks.push(LoadableChunkKey::new(file.display().to_string()));
+            }
+        }
+
+        let progress = SeriesSourceLoadResult::new(chunks);
+        Ok(Self {
+            folder,
+            progress: RwLock::new(progress),
+        })
+    }
+
+    fn folder_to_key(folder: &Path) -> LoadableKey {
+        LoadableKey::new(folder.display().to_string())
+    }
+
+    #[allow(dead_code)]
+    fn key_to_folder(key: &LoadableKey) -> PathBuf {
+        PathBuf::from(key.key())
+    }
+
+    #[allow(dead_code)]
+    fn file_to_key(file: &Path) -> LoadableChunkKey {
+        LoadableChunkKey::new(file.display().to_string())
+    }
+
+    fn key_to_file(key: &LoadableChunkKey) -> PathBuf {
+        PathBuf::from(key.chunk_key())
+    }
+}
+
+impl SeriesSource<File> for FlatFolderSeriesSource {
+    fn loadable_key(&self) -> LoadableKey {
+        Self::folder_to_key(&self.folder)
+    }
+
+    fn chunks(&self) -> std::result::Result<Vec<LoadableChunkKey>, LoadError> {
+        if let Ok(progress) = self.progress.read() {
+            Ok(progress.total().clone())
+        } else {
+            Ok(Vec::with_capacity(0))
         }
     }
-}
 
-impl From<&String> for SeriesKey {
-    fn from(value: &String) -> Self {
-        SeriesKey::from(value.as_str())
-    }
-}
-
-impl From<String> for SeriesKey {
-    fn from(value: String) -> Self {
-        Self { series_uid: value }
-    }
-}
-
-impl From<&Path> for SeriesKey {
-    fn from(value: &Path) -> Self {
-        Self {
-            series_uid: value.display().to_string(),
-        }
-    }
-}
-
-impl From<&PathBuf> for SeriesKey {
-    fn from(value: &PathBuf) -> Self {
-        SeriesKey::from(value.as_path())
-    }
-}
-
-impl std::fmt::Display for SeriesKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.series_uid)
+    fn chunk_stream(&self, chunk_key: &LoadableChunkKey) -> std::result::Result<File, LoadError> {
+        let path = Self::key_to_file(chunk_key);
+        File::open(path).map_err(LoadError::from)
     }
 }
 
 #[derive(Default)]
 struct DicomFileImageLoader {
-    vol_cache: Mutex<HashMap<SeriesKey, ImageVolume>>,
-    failed: Mutex<HashSet<PathBuf>>,
+    workspace: RwLock<Workspace>,
 }
 
 impl DicomFileImageLoader {
-    fn load_files(&self, _ctx: Context, files: Vec<PathBuf>) -> Result<()> {
-        // Load all files.
-        for path in &files {
-            let file = match File::open(path) {
-                Err(e) => {
-                    self.failed.lock().insert(path.to_owned());
-                    eprintln!("Failed to open file: {}: {e:?}", path.display());
-                    return Err(anyhow!(e));
-                }
-                Ok(file) => file,
-            };
-
-            let dataset = BufReader::with_capacity(1024 * 1024, file);
-            let mut parser = ParserBuilder::default().build(dataset, &STANDARD_DICOM_DICTIONARY);
-            let Some(dcmroot) = DicomRoot::parse(&mut parser)? else {
-                self.failed.lock().insert(path.to_owned());
-                eprintln!("Missing PixelData: {}", path.display());
-                continue;
-            };
-
-            let series_key = SeriesKey::from(
-                dcmroot
-                    .series_instance_id()
-                    .unwrap_or_else(|_| "<NO SERIES UID>".to_owned()),
-            );
-
-            let mut vol_cache = self.vol_cache.lock();
-            let imgvol = vol_cache.entry(series_key).or_default();
-            if let Err(e) = imgvol.load_slice(dcmroot) {
-                self.failed.lock().insert(path.to_owned());
-                eprintln!("Failed to load {}: {e:?}", path.display());
-            }
-            drop(vol_cache);
-        }
-
-        Ok(())
-    }
-
-    fn num_z_slices_loaded(&self, uri: &SeriesKey) -> usize {
-        if let Some(vol) = self.vol_cache.lock().get(uri) {
-            vol.slices().len()
-        } else {
-            0
-        }
-    }
-
     fn to_image(imgvol: &ImageVolume, axis: &VolAxis, slice_index: usize) -> ColorImage {
         let win = imgvol
             .minmax_winlevel()
@@ -238,37 +207,43 @@ impl ImageLoader for DicomFileImageLoader {
 
     fn load(&self, _ctx: &egui::Context, uri: &str, _: SizeHint) -> egui::load::ImageLoadResult {
         let slice_key = SliceKey::from(uri);
-        if let Some(imgvol) = self.vol_cache.lock().get(&slice_key.series) {
-            let axis_dims = imgvol.axis_dims(&slice_key.axis);
-            if slice_key.slice_index < axis_dims.z {
-                let image = Self::to_image(imgvol, &slice_key.axis, slice_key.slice_index);
-                let image = Arc::new(image);
-                return Ok(ImagePoll::Ready { image });
+        if let Ok(workspace) = self.workspace.read() {
+            if let Some(imgvol) = workspace.volume(&slice_key.series) {
+                let axis_dims = imgvol.axis_dims(&slice_key.axis);
+                if slice_key.slice_index < axis_dims.z {
+                    let image = Self::to_image(imgvol, &slice_key.axis, slice_key.slice_index);
+                    let image = Arc::new(image);
+                    return Ok(ImagePoll::Ready { image });
+                }
             }
         }
-        Err(LoadError::NotSupported)
+        Err(egui::load::LoadError::NotSupported)
     }
 
     fn forget(&self, uri: &str) {
-        self.vol_cache.lock().remove(&SeriesKey::from(uri));
+        if let Ok(mut workspace) = self.workspace.write() {
+            workspace.unload(&LoadableKey::from(uri));
+        }
     }
 
     fn forget_all(&self) {
-        self.vol_cache.lock().clear();
+        if let Ok(mut workspace) = self.workspace.write() {
+            workspace.unload_all();
+        }
     }
 
     fn byte_size(&self) -> usize {
-        self.vol_cache
-            .lock()
-            .values()
-            .map(ImageVolume::byte_size)
-            .sum()
+        if let Ok(workspace) = self.workspace.read() {
+            workspace.volumes().map(|v| v.byte_size()).sum()
+        } else {
+            0
+        }
     }
 }
 
 const NO_CURRENT_SLICE_SENTINEL: usize = usize::MAX;
 struct ImageViewer {
-    image_files: Vec<PathBuf>,
+    source: Arc<FlatFolderSeriesSource>,
     current_slice: usize,
     image_loader: Arc<DicomFileImageLoader>,
     view_axis: VolAxis,
@@ -276,29 +251,24 @@ struct ImageViewer {
 
 impl ImageViewer {
     fn new(input: &Path, cc: &eframe::CreationContext<'_>) -> Result<Self> {
-        let mut image_files = Vec::new();
-        if input.is_dir() {
-            let files = input.read_dir()?;
-            for file in files {
-                let file = file?.path();
-                image_files.push(file);
-            }
-        } else if input.is_file() {
-            image_files.push(input.to_path_buf());
-        }
-
         // Start the current image as the middle index. Note that at this point the files list is
         // not sorted at all.
         let loader = Arc::new(DicomFileImageLoader::default());
 
+        let source = Arc::new(FlatFolderSeriesSource::new(input.to_path_buf())?);
+
         // Create one list of the files, shared to the thread which will load all the images in the
         // background. After loading it modifies the input list of files to be sorted based on the
         // image position.
-        let image_files_for_loading = image_files.clone();
         let loader_for_loading = loader.clone();
-        let ctx = cc.egui_ctx.clone();
+        let source_for_loading = source.clone();
         thread::spawn(move || {
-            if let Err(e) = loader_for_loading.load_files(ctx, image_files_for_loading) {
+            let loader = Loader::<File>::new();
+            if let Err(e) = loader.load_into(
+                source_for_loading.deref(),
+                &loader_for_loading.workspace,
+                Some(&source_for_loading.progress),
+            ) {
                 eprintln!("Error loading: {e:?}");
             }
         });
@@ -306,7 +276,7 @@ impl ImageViewer {
         let loader_for_self = loader.clone();
         cc.egui_ctx.add_image_loader(loader);
         Ok(Self {
-            image_files,
+            source,
             current_slice: NO_CURRENT_SLICE_SENTINEL,
             image_loader: loader_for_self,
             view_axis: VolAxis::Z,
@@ -371,29 +341,31 @@ impl eframe::App for ImageViewer {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.spacing_mut().window_margin = Margin::same(5);
 
-            let img_vol_cache_lock = self.image_loader.vol_cache.lock();
-            let Some(series_key) = img_vol_cache_lock.keys().next().cloned() else {
+            let series_key = self.source.loadable_key();
+
+            let mut finished_loading = false;
+            if let Ok(progress) = self.source.progress.try_read() {
+                let num_files = progress.num_total();
+                let num_failed = progress.num_failed();
+                let total_files = num_files - num_failed;
+                let loaded_count = progress.num_loaded();
+                finished_loading = loaded_count == total_files;
+                ui.add(ImageViewer::create_progress(total_files, loaded_count));
+            } else {
+                ui.add(
+                    egui::ProgressBar::new(0_f32)
+                        .animate(true)
+                        .text("Unable to report progress"),
+                );
+            }
+
+            let Ok(workspace) = self.image_loader.workspace.try_read() else {
                 return;
             };
-            drop(img_vol_cache_lock);
-
-            // The loader is used to filter out files that failed parsing.
-            let image_loader = self.image_loader.clone();
-
-            // File processing progress.
-            let num_files = self.image_files.len();
-            let num_failed = image_loader.failed.lock().len();
-            let total_files = num_files - num_failed;
-            let loaded_count = image_loader.num_z_slices_loaded(&series_key);
-            let finished_loading = loaded_count == total_files;
-            ui.add(ImageViewer::create_progress(total_files, loaded_count));
-
-            let vol_cache = image_loader.vol_cache.lock();
-            let imgvol = vol_cache.get(&series_key);
+            let imgvol = workspace.volume(&series_key);
             let Some(imgvol) = imgvol else {
                 return;
             };
-
             ui.label(imgvol.patient_name());
             ui.label(imgvol.patient_id());
 
@@ -443,11 +415,11 @@ impl eframe::App for ImageViewer {
             ui.label(imgvol.series_desc());
 
             ui.label(format!("Slice No: {}/{num_slices}", self.current_slice + 1));
-            ui.label(format!("Series UID: {}", series_key.series_uid));
+            ui.label(format!("Series UID: {}", imgvol.series_uid()));
 
             // Need to manually drop the cache lock before slice/image loading (via adding an image
             // to the ui), otherwise it results in a deadlock.
-            drop(vol_cache);
+            drop(workspace);
 
             let slice_key = SliceKey::from((&series_key, axis, self.current_slice));
             ui.add(egui::Image::from_uri(slice_key.to_string()));
