@@ -53,8 +53,8 @@ impl PixelDataSliceU8 {
         let interp_as_rgb =
             info.photo_interp().is_some_and(PhotoInterp::is_rgb) && info.samples_per_pixel() == 3;
 
-        info.set_min_val(*buffer.iter().min().unwrap_or(&0) as f32);
-        info.set_max_val(*buffer.iter().max().unwrap_or(&0) as f32);
+        info.set_min_val(f32::from(*buffer.iter().min().unwrap_or(&0)));
+        info.set_max_val(f32::from(*buffer.iter().max().unwrap_or(&0)));
 
         Self {
             info,
@@ -114,10 +114,10 @@ impl PixelDataSliceU8 {
                 || {
                     WindowLevel::new(
                         "Default".to_string(),
-                        u8::MAX as f32 / 2_f32,
-                        u8::MAX as f32 / 2_f32,
-                        u8::MIN as f32,
-                        u8::MAX as f32,
+                        f32::from(u8::MAX) / 2_f32,
+                        f32::from(u8::MAX) / 2_f32,
+                        f32::from(u8::MIN),
+                        f32::from(u8::MAX),
                     )
                 },
                 |winlevel| {

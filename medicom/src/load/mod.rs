@@ -15,6 +15,7 @@
 */
 
 use std::{
+    collections::HashMap,
     io::{BufReader, Read},
     marker::PhantomData,
     sync::RwLock,
@@ -42,10 +43,12 @@ pub struct LoadableKey {
 }
 
 impl LoadableKey {
+    #[must_use]
     pub fn new(series_uid: String) -> Self {
         Self { key: series_uid }
     }
 
+    #[must_use]
     pub fn key(&self) -> &str {
         &self.key
     }
@@ -75,10 +78,12 @@ pub struct LoadableChunkKey {
 }
 
 impl LoadableChunkKey {
+    #[must_use]
     pub fn new(chunk_key: String) -> Self {
         Self { chunk_key }
     }
 
+    #[must_use]
     pub fn chunk_key(&self) -> &String {
         &self.chunk_key
     }
@@ -105,6 +110,7 @@ impl std::fmt::Display for LoadableChunkKey {
 /// Provides the datasets for loading into a volume.
 pub trait SeriesSource<R: Read> {
     /// The `DatasetKey` this `DatasetSource` is for.
+    #[must_use]
     fn loadable_key(&self) -> LoadableKey;
     /// The list of SOPs within this Series.
     fn chunks(&self) -> Result<Vec<LoadableChunkKey>, LoadError>;
@@ -123,6 +129,7 @@ pub struct Loader<R: Read> {
 impl<R: Read> Loader<R> {
     // Deriving Default doesn't seem to work properly with the template <R>.
     #[allow(clippy::new_without_default)]
+    #[must_use]
     pub fn new() -> Self {
         Self {
             _phantom: PhantomData,
@@ -130,6 +137,12 @@ impl<R: Read> Loader<R> {
     }
 
     /// Loads this source into a `Workspace`.
+    ///
+    /// # Errors
+    /// If an error occurs while loading an individual chunk the `LoadError` will be inserted into
+    /// the `progress` passed in, and not returned from this function.
+    ///
+    /// - `LoadError::LockError` if the `workspace` lock is poisoned.
     pub fn load_into(
         &self,
         source: &impl SeriesSource<R>,
@@ -147,13 +160,12 @@ impl<R: Read> Loader<R> {
             } else {
                 workspace.initialize_vol(source.loadable_key())
             };
-            let success = self.load_chunk(source, imgvol, &chunk_key).is_ok();
+            let load_result = self.load_chunk(source, imgvol, &chunk_key);
             if let Some(progress) = progress {
                 if let Ok(mut progress) = progress.write() {
-                    if success {
-                        progress.add_loaded(chunk_key);
-                    } else {
-                        progress.add_failed(chunk_key);
+                    match load_result {
+                        Ok(_) => progress.add_loaded(chunk_key),
+                        Err(e) => progress.add_failed(chunk_key, e),
                     }
                 }
             }
@@ -161,6 +173,7 @@ impl<R: Read> Loader<R> {
         Ok(())
     }
 
+    #[allow(clippy::unused_self)] // The self arg ties this function with the `R` generic.
     fn load_chunk(
         &self,
         source: &impl SeriesSource<R>,
@@ -179,18 +192,20 @@ impl<R: Read> Loader<R> {
 pub struct SeriesSourceLoadResult {
     total: Vec<LoadableChunkKey>,
     loaded: Vec<LoadableChunkKey>,
-    failed: Vec<LoadableChunkKey>,
+    failed: HashMap<LoadableChunkKey, LoadError>,
 }
 
 impl SeriesSourceLoadResult {
+    #[must_use]
     pub fn new(total: Vec<LoadableChunkKey>) -> Self {
         Self {
             total,
             loaded: Vec::new(),
-            failed: Vec::new(),
+            failed: HashMap::new(),
         }
     }
 
+    #[must_use]
     pub fn total(&self) -> &Vec<LoadableChunkKey> {
         &self.total
     }
@@ -199,18 +214,21 @@ impl SeriesSourceLoadResult {
         self.loaded.push(loaded);
     }
 
-    pub fn add_failed(&mut self, failed: LoadableChunkKey) {
-        self.failed.push(failed);
+    pub fn add_failed(&mut self, failed: LoadableChunkKey, failure: LoadError) {
+        self.failed.insert(failed, failure);
     }
 
+    #[must_use]
     pub fn num_total(&self) -> usize {
         self.total.len()
     }
 
+    #[must_use]
     pub fn num_loaded(&self) -> usize {
         self.loaded.len()
     }
 
+    #[must_use]
     pub fn num_failed(&self) -> usize {
         self.failed.len()
     }

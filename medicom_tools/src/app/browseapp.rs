@@ -17,6 +17,7 @@
 //! The browse command opens a TUI for navigating through a DICOM data set.
 
 use std::{
+    cmp::Ordering,
     collections::HashMap,
     io::{stdout, Stdout},
     ops::Sub,
@@ -155,7 +156,7 @@ struct DicomNodeViewState {
 }
 
 /// User keyboard/mouse events are translated into actions that modify the application state.
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 enum UserAction {
     None,
     Quit,
@@ -163,7 +164,7 @@ enum UserAction {
     NavUpLevel,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 enum InputMode {
     /// Normal mode is like vim's Normal mode.
     Normal,
@@ -299,7 +300,7 @@ impl<'app> BrowseApp {
                     render_input_mode,
                     render_input_text,
                     frame,
-                )
+                );
             })?;
 
             // Check for user event. If the user event would modify the ViewState it will also be
@@ -323,10 +324,10 @@ impl<'app> BrowseApp {
                         // start and end positions are flipped.
                         let num_rows = view_state.num_rows;
                         let mut start = view_state.table_state.selected().unwrap_or_default();
-                        if inc < 0 {
-                            start -= 1;
-                        } else if inc > 0 {
-                            start += 1;
+                        match inc.cmp(&0) {
+                            Ordering::Less => start -= 1,
+                            Ordering::Equal => {}
+                            Ordering::Greater => start += 1,
                         }
                         let end = start + num_rows;
                         // Use Box for the type-erasure, as reversing the iterator results in a
@@ -473,7 +474,7 @@ impl<'app> BrowseApp {
             }
             Char('u') => {
                 if event.modifiers.contains(KeyModifiers::CONTROL) {
-                    Self::table_select_next(view_state, 20);
+                    Self::table_select_next(view_state, -20);
                 }
                 (UserAction::None, InputMode::Normal)
             }

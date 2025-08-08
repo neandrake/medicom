@@ -125,17 +125,17 @@ impl PixelDataSliceInfo {
         if let Some(val) = pdinfo
             .dcmroot()
             .get_value_by_tag(&tags::SliceThickness)
-            .and_then(|v| v.double())
+            .and_then(|v| v.float())
         {
-            pdinfo.slice_thickness = val as f32;
+            pdinfo.slice_thickness = val;
         }
         #[allow(clippy::cast_possible_truncation)]
         if let Some(val) = pdinfo
             .dcmroot()
             .get_value_by_tag(&tags::SpacingBetweenSlices)
-            .and_then(|v| v.double())
+            .and_then(|v| v.float())
         {
-            pdinfo.spacing_between_slices = val as f32;
+            pdinfo.spacing_between_slices = val;
         }
         if let Some(val) = pdinfo
             .dcmroot()
@@ -261,11 +261,11 @@ impl PixelDataSliceInfo {
         pdinfo.intercept = pdinfo
             .dcmroot()
             .get_value_by_tag(&tags::RescaleIntercept)
-            .and_then(|v| v.double().map(|v| v as f32));
+            .and_then(|v| v.float());
         pdinfo.slope = pdinfo
             .dcmroot()
             .get_value_by_tag(&tags::RescaleSlope)
-            .and_then(|v| v.double().map(|v| v as f32));
+            .and_then(|v| v.float());
         if let Some(val) = pdinfo
             .dcmroot()
             .get_value_by_tag(&tags::RescaleType)

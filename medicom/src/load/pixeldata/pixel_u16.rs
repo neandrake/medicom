@@ -171,10 +171,10 @@ impl PixelDataSliceU16 {
                 || {
                     WindowLevel::new(
                         "Default".to_string(),
-                        u16::MAX as f32 / 2_f32,
-                        u16::MAX as f32 / 2_f32,
-                        u16::MIN as f32,
-                        u16::MAX as f32,
+                        f32::from(u16::MAX) / 2_f32,
+                        f32::from(u16::MAX) / 2_f32,
+                        f32::from(u16::MIN),
+                        f32::from(u16::MAX),
                     )
                 },
                 |winlevel| {

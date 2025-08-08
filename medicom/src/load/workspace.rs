@@ -24,6 +24,7 @@ pub struct Workspace {
 }
 
 impl Workspace {
+    #[must_use]
     pub fn volume(&self, loadable_key: &LoadableKey) -> Option<&ImageVolume> {
         self.volumes.get(loadable_key)
     }

@@ -77,7 +77,7 @@ impl From<&str> for SliceKey {
         }
 
         // The series_uid component could be a file path and include forward-slashes.
-        if let Some((a, b)) = series_uid.rsplit_once("/") {
+        if let Some((a, b)) = series_uid.rsplit_once('/') {
             series_uid = a;
             slice_index = b.parse::<usize>().unwrap_or_default();
         }
@@ -188,7 +188,7 @@ impl DicomFileImageLoader {
     fn to_image(imgvol: &ImageVolume, axis: &VolAxis, slice_index: usize) -> ColorImage {
         let win = imgvol
             .minmax_winlevel()
-            .with_out(u8::MIN as f32, u8::MAX as f32);
+            .with_out(f32::from(u8::MIN), f32::from(u8::MAX));
 
         let axis_dims = imgvol.axis_dims(axis);
 
@@ -234,7 +234,7 @@ impl ImageLoader for DicomFileImageLoader {
 
     fn byte_size(&self) -> usize {
         if let Ok(workspace) = self.workspace.read() {
-            workspace.volumes().map(|v| v.byte_size()).sum()
+            workspace.volumes().map(ImageVolume::byte_size).sum()
         } else {
             0
         }
@@ -265,7 +265,7 @@ impl ImageViewer {
         thread::spawn(move || {
             let loader = Loader::<File>::new();
             if let Err(e) = loader.load_into(
-                source_for_loading.deref(),
+                &*source_for_loading,
                 &loader_for_loading.workspace,
                 Some(&source_for_loading.progress),
             ) {
@@ -373,7 +373,7 @@ impl eframe::App for ImageViewer {
                 return;
             }
 
-            let axis = self.view_axis.to_owned();
+            let axis = self.view_axis.clone();
             let axis_dims = imgvol.axis_dims(&axis);
             let num_slices = axis_dims.z;
             if self.current_slice == NO_CURRENT_SLICE_SENTINEL {

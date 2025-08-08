@@ -218,18 +218,19 @@ impl ImageVolume {
     /// - `PixelValueError` if the pixel values fail to parse into `i16`.
     /// - `InconsistentSliceFormat` if the slice is not in the same format as other slices already
     ///   loaded in to this volume.
+    #[allow(clippy::too_many_lines)]
     pub fn load_slice(&mut self, dcmroot: DicomRoot) -> Result<(), LoadError> {
         let sop_uid = dcmroot.sop_instance_id()?;
         let series_uid = dcmroot.series_instance_id()?;
 
         if let Some(RawValue::Strings(vals)) = dcmroot.get_value_by_tag(&tags::PatientsName) {
             if let Some(patient_name) = vals.first() {
-                self.patient_name = patient_name.to_owned();
+                patient_name.clone_into(&mut self.patient_name);
             }
         }
         if let Some(RawValue::Strings(vals)) = dcmroot.get_value_by_tag(&tags::PatientID) {
             if let Some(patient_id) = vals.first() {
-                self.patient_id = patient_id.to_owned();
+                patient_id.clone_into(&mut self.patient_id);
             }
         }
 
@@ -268,14 +269,14 @@ impl ImageVolume {
                     ),
                 ));
             }
-            if !self.dims.matches(&dims) {
+            if self.dims.matches(&dims) {
+                // If volume dims match appropriately, increase the number of loaded slices.
+                self.dims.inc_z_count();
+            } else {
                 return Err(LoadError::InconsistentSliceFormat(
                     sop_uid,
                     format!("Dimensions mismatch, this: {dims}, other: {}", self.dims),
                 ));
-            } else {
-                // If volume dims match appropriately, increase the number of loaded slices.
-                self.dims.inc_z_count();
             }
             if stride != self.stride {
                 return Err(LoadError::InconsistentSliceFormat(
@@ -360,7 +361,7 @@ impl ImageVolume {
         }
     }
 
-    /// Loads the PixelData for the given slice. The pixel values will be trunacted to `i16`.
+    /// Loads the `PixelData` for the given slice. The pixel values will be trunacted to `i16`.
     fn load_pixel_data(
         pdinfo: PixelDataSliceInfo,
     ) -> Result<(PixelDataSliceInfo, Vec<i16>), LoadError> {
@@ -450,9 +451,9 @@ pub struct ImageVolumeAxisSliceIter<'buf> {
     pixel_count: usize,
 }
 
-impl<'buf> ImageVolumeAxisSliceIter<'buf> {
-    /// Compute the relative row and column from pixel_count, which used with axis_index to produce
-    /// the x,y,z coordinate within the volume whose pixel to retrieve.
+impl ImageVolumeAxisSliceIter<'_> {
+    /// Compute the relative row and column from `pixel_count`, which used with `axis_index` to
+    /// produce the x,y,z coordinate within the volume whose pixel to retrieve.
     fn compute_coord(&self, index: usize) -> Option<IndexVec> {
         match self.axis {
             VolAxis::X => {
