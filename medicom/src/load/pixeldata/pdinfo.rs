@@ -22,7 +22,7 @@ use crate::{
     },
     dict::tags,
     load::{
-        pixeldata::{pdwinlevel::WindowLevel, BitsAlloc, PhotoInterp, LoadError},
+        pixeldata::{winlevel::WindowLevel, BitsAlloc, LoadError, PhotoInterp},
         DicomVec, IndexVec, VolDims,
     },
 };
@@ -58,7 +58,7 @@ pub struct PixelDataSliceInfo {
     unit: String,
     patient_pos: String,
     image_pos: [f32; 3],
-    patient_orientation: [f32; 6],
+    iop: [f32; 6],
     min_val: f32,
     max_val: f32,
     win_levels: Vec<WindowLevel>,
@@ -69,6 +69,11 @@ impl PixelDataSliceInfo {
     #[must_use]
     pub fn image_pos(&self) -> &[f32; 3] {
         &self.image_pos
+    }
+
+    #[must_use]
+    pub fn iop(&self) -> &[f32; 6] {
+        &self.iop
     }
 
     #[must_use]
@@ -109,7 +114,7 @@ impl PixelDataSliceInfo {
             unit: String::new(),
             patient_pos: String::new(),
             image_pos: [0_f32; 3],
-            patient_orientation: [0_f32; 6],
+            iop: [0_f32; 6],
             min_val: 0_f32,
             max_val: 0_f32,
             win_levels: Vec::with_capacity(0),
@@ -174,11 +179,13 @@ impl PixelDataSliceInfo {
         {
             pdinfo.cols = val;
         }
-        if let Some(RawValue::Doubles(val)) = pdinfo.dcmroot().get_value_by_tag(&tags::PixelSpacing)
+        if let Some(val) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::PixelSpacing)
+            .map(|v| v.floats())
         {
-            #[allow(clippy::cast_possible_truncation)]
             if val.len() == 2 {
-                pdinfo.pixel_spacing = (val[0] as f32, val[1] as f32);
+                pdinfo.pixel_spacing = (val[0], val[1]);
             }
         }
         if let Some(val) = pdinfo
@@ -213,11 +220,12 @@ impl PixelDataSliceInfo {
             .dcmroot()
             .get_value_by_tag(&tags::PixelPaddingValue)
             .and_then(|v| v.ushort());
-        if let Some(RawValue::Doubles(vals)) =
-            pdinfo.dcmroot().get_value_by_tag(&tags::WindowCenter)
+        if let Some(vals) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::WindowCenter)
+            .map(|v| v.floats())
         {
             for (i, val) in vals.into_iter().enumerate() {
-                let val = val as f32;
                 if let Some(winlevel) = pdinfo.win_levels.get_mut(i) {
                     winlevel.set_center(val);
                 } else {
@@ -231,10 +239,12 @@ impl PixelDataSliceInfo {
                 }
             }
         }
-        if let Some(RawValue::Doubles(vals)) = pdinfo.dcmroot().get_value_by_tag(&tags::WindowWidth)
+        if let Some(vals) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::WindowWidth)
+            .map(|v| v.floats())
         {
             for (i, val) in vals.into_iter().enumerate() {
-                let val = val as f32;
                 if let Some(winlevel) = pdinfo.win_levels.get_mut(i) {
                     winlevel.set_width(val);
                 } else {
@@ -296,23 +306,22 @@ impl PixelDataSliceInfo {
         {
             pdinfo.patient_pos = val;
         }
-        if let Some(RawValue::Doubles(vals)) = pdinfo
+        if let Some(vals) = pdinfo
             .dcmroot()
             .get_value_by_tag(&tags::ImagePositionPatient)
+            .map(|v| v.floats())
         {
             if vals.len() <= pdinfo.image_pos.len() {
-                for (i, val) in vals.iter().enumerate() {
-                    pdinfo.image_pos[i] = *val as f32;
-                }
+                pdinfo.image_pos.copy_from_slice(vals.as_slice());
             }
         }
-        if let Some(RawValue::Doubles(vals)) =
-            pdinfo.dcmroot().get_value_by_tag(&tags::PatientOrientation)
+        if let Some(vals) = pdinfo
+            .dcmroot()
+            .get_value_by_tag(&tags::ImageOrientationPatient)
+            .map(|v| v.floats())
         {
-            if vals.len() <= pdinfo.patient_orientation.len() {
-                for (i, val) in vals.iter().enumerate() {
-                    pdinfo.patient_orientation[i] = *val as f32;
-                }
+            if vals.len() <= pdinfo.iop.len() {
+                pdinfo.iop.copy_from_slice(vals.as_slice());
             }
         }
 
@@ -385,7 +394,7 @@ impl std::fmt::Debug for PixelDataSliceInfo {
             .field("unit", &self.unit)
             .field("patient_pos", &self.patient_pos)
             .field("image_pos", &self.image_pos)
-            .field("patient_orientation", &self.patient_orientation)
+            .field("patient_orientation", &self.iop)
             .field("min_val", &self.min_val)
             .field("max_val", &self.max_val)
             .field("win_levels", &self.win_levels)
@@ -555,9 +564,9 @@ impl PixelDataSliceInfo {
     #[must_use]
     pub fn vol_dims(&self) -> VolDims {
         let origin = DicomVec {
-            x: self.image_pos[0] as f32,
-            y: self.image_pos[1] as f32,
-            z: self.image_pos[2] as f32,
+            x: self.image_pos[0],
+            y: self.image_pos[1],
+            z: self.image_pos[2],
         };
 
         let count = IndexVec {

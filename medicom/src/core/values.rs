@@ -181,6 +181,13 @@ impl<'e> RawValue<'e> {
     pub fn short(&self) -> Option<i16> {
         match self {
             RawValue::Shorts(shorts) if !shorts.is_empty() => Some(shorts[0]),
+            RawValue::UShorts(ushorts) if !ushorts.is_empty() => Some(ushorts[0] as i16),
+            RawValue::Ints(ints) if !ints.is_empty() => Some(ints[0] as i16),
+            RawValue::UInts(uints) if !uints.is_empty() => Some(uints[0] as i16),
+            RawValue::Longs(longs) if !longs.is_empty() => Some(longs[0] as i16),
+            RawValue::ULongs(ulongs) if !ulongs.is_empty() => Some(ulongs[0] as i16),
+            RawValue::Floats(floats) if !floats.is_empty() => Some(floats[0] as i16),
+            RawValue::Doubles(doubles) if !doubles.is_empty() => Some(doubles[0] as i16),
             _ => None,
         }
     }
@@ -189,6 +196,13 @@ impl<'e> RawValue<'e> {
     pub fn ushort(&self) -> Option<u16> {
         match self {
             RawValue::UShorts(ushorts) if !ushorts.is_empty() => Some(ushorts[0]),
+            RawValue::Ints(ints) if !ints.is_empty() => Some(ints[0] as u16),
+            RawValue::UInts(uints) if !uints.is_empty() => Some(uints[0] as u16),
+            RawValue::Longs(longs) if !longs.is_empty() => Some(longs[0] as u16),
+            RawValue::ULongs(ulongs) if !ulongs.is_empty() => Some(ulongs[0] as u16),
+            RawValue::Floats(floats) if !floats.is_empty() => Some(floats[0] as u16),
+            RawValue::Doubles(doubles) if !doubles.is_empty() => Some(doubles[0] as u16),
+            RawValue::Shorts(shorts) if !shorts.is_empty() => Some(shorts[0] as u16),
             _ => None,
         }
     }
@@ -197,6 +211,13 @@ impl<'e> RawValue<'e> {
     pub fn int(&self) -> Option<i32> {
         match self {
             RawValue::Ints(ints) if !ints.is_empty() => Some(ints[0]),
+            RawValue::UInts(uints) if !uints.is_empty() => Some(uints[0] as i32),
+            RawValue::Longs(longs) if !longs.is_empty() => Some(longs[0] as i32),
+            RawValue::ULongs(ulongs) if !ulongs.is_empty() => Some(ulongs[0] as i32),
+            RawValue::Floats(floats) if !floats.is_empty() => Some(floats[0] as i32),
+            RawValue::Doubles(doubles) if !doubles.is_empty() => Some(doubles[0] as i32),
+            RawValue::UShorts(ushorts) if !ushorts.is_empty() => Some(ushorts[0] as i32),
+            RawValue::Shorts(shorts) if !shorts.is_empty() => Some(i32::from(shorts[0])),
             _ => None,
         }
     }
@@ -205,6 +226,13 @@ impl<'e> RawValue<'e> {
     pub fn uint(&self) -> Option<u32> {
         match self {
             RawValue::UInts(uints) if !uints.is_empty() => Some(uints[0]),
+            RawValue::Longs(longs) if !longs.is_empty() => Some(longs[0] as u32),
+            RawValue::ULongs(ulongs) if !ulongs.is_empty() => Some(ulongs[0] as u32),
+            RawValue::Floats(floats) if !floats.is_empty() => Some(floats[0] as u32),
+            RawValue::Doubles(doubles) if !doubles.is_empty() => Some(doubles[0] as u32),
+            RawValue::Ints(ints) if !ints.is_empty() => Some(ints[0] as u32),
+            RawValue::UShorts(ushorts) if !ushorts.is_empty() => Some(u32::from(ushorts[0])),
+            RawValue::Shorts(shorts) if !shorts.is_empty() => Some(shorts[0] as u32),
             _ => None,
         }
     }
@@ -213,6 +241,13 @@ impl<'e> RawValue<'e> {
     pub fn long(&self) -> Option<i64> {
         match self {
             RawValue::Longs(longs) if !longs.is_empty() => Some(longs[0]),
+            RawValue::ULongs(ulongs) if !ulongs.is_empty() => Some(ulongs[0] as i64),
+            RawValue::Floats(floats) if !floats.is_empty() => Some(floats[0] as i64),
+            RawValue::Doubles(doubles) if !doubles.is_empty() => Some(doubles[0] as i64),
+            RawValue::UInts(uints) if !uints.is_empty() => Some(uints[0] as i64),
+            RawValue::Ints(ints) if !ints.is_empty() => Some(i64::from(ints[0])),
+            RawValue::UShorts(ushorts) if !ushorts.is_empty() => Some(ushorts[0] as i64),
+            RawValue::Shorts(shorts) if !shorts.is_empty() => Some(i64::from(shorts[0])),
             _ => None,
         }
     }
@@ -221,6 +256,13 @@ impl<'e> RawValue<'e> {
     pub fn ulong(&self) -> Option<u64> {
         match self {
             RawValue::ULongs(ulongs) if !ulongs.is_empty() => Some(ulongs[0]),
+            RawValue::Floats(floats) if !floats.is_empty() => Some(floats[0] as u64),
+            RawValue::Doubles(doubles) if !doubles.is_empty() => Some(doubles[0] as u64),
+            RawValue::Longs(longs) if !longs.is_empty() => Some(longs[0] as u64),
+            RawValue::UInts(uints) if !uints.is_empty() => Some(u64::from(uints[0])),
+            RawValue::Ints(ints) if !ints.is_empty() => Some(ints[0] as u64),
+            RawValue::UShorts(ushorts) if !ushorts.is_empty() => Some(u64::from(ushorts[0])),
+            RawValue::Shorts(shorts) if !shorts.is_empty() => Some(shorts[0] as u64),
             _ => None,
         }
     }
@@ -229,6 +271,13 @@ impl<'e> RawValue<'e> {
     pub fn float(&self) -> Option<f32> {
         match self {
             RawValue::Floats(floats) if !floats.is_empty() => Some(floats[0]),
+            RawValue::Doubles(doubles) if !doubles.is_empty() => Some(doubles[0] as f32),
+            RawValue::ULongs(ulongs) if !ulongs.is_empty() => Some(ulongs[0] as f32),
+            RawValue::Longs(longs) if !longs.is_empty() => Some(longs[0] as f32),
+            RawValue::UInts(uints) if !uints.is_empty() => Some(uints[0] as f32),
+            RawValue::Ints(ints) if !ints.is_empty() => Some(ints[0] as f32),
+            RawValue::UShorts(ushorts) if !ushorts.is_empty() => Some(ushorts[0] as f32),
+            RawValue::Shorts(shorts) if !shorts.is_empty() => Some(shorts[0] as f32),
             _ => None,
         }
     }
@@ -236,8 +285,135 @@ impl<'e> RawValue<'e> {
     #[must_use]
     pub fn double(&self) -> Option<f64> {
         match self {
+            RawValue::Floats(floats) if !floats.is_empty() => Some(f64::from(floats[0])),
             RawValue::Doubles(doubles) if !doubles.is_empty() => Some(doubles[0]),
+            RawValue::ULongs(ulongs) if !ulongs.is_empty() => Some(ulongs[0] as f64),
+            RawValue::Longs(longs) if !longs.is_empty() => Some(longs[0] as f64),
+            RawValue::UInts(uints) if !uints.is_empty() => Some(f64::from(uints[0])),
+            RawValue::Ints(ints) if !ints.is_empty() => Some(f64::from(ints[0])),
+            RawValue::UShorts(ushorts) if !ushorts.is_empty() => Some(f64::from(ushorts[0])),
+            RawValue::Shorts(shorts) if !shorts.is_empty() => Some(f64::from(shorts[0])),
             _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn shorts(&self) -> Vec<i16> {
+        match self {
+            RawValue::Shorts(shorts) => shorts.to_owned(),
+            RawValue::UShorts(ushorts) => ushorts.iter().map(|v| *v as i16).collect(),
+            RawValue::Ints(ints) => ints.iter().map(|v| *v as i16).collect(),
+            RawValue::UInts(uints) => uints.iter().map(|v| *v as i16).collect(),
+            RawValue::Longs(longs) => longs.iter().map(|v| *v as i16).collect(),
+            RawValue::ULongs(ulongs) => ulongs.iter().map(|v| *v as i16).collect(),
+            RawValue::Floats(floats) => floats.iter().map(|v| *v as i16).collect(),
+            RawValue::Doubles(doubles) => doubles.iter().map(|v| *v as i16).collect(),
+            _ => Vec::with_capacity(0),
+        }
+    }
+
+    #[must_use]
+    pub fn ushorts(&self) -> Vec<u16> {
+        match self {
+            RawValue::UShorts(ushorts) => ushorts.to_owned(),
+            RawValue::Ints(ints) => ints.iter().map(|v| *v as u16).collect(),
+            RawValue::UInts(uints) => uints.iter().map(|v| *v as u16).collect(),
+            RawValue::Longs(longs) => longs.iter().map(|v| *v as u16).collect(),
+            RawValue::ULongs(ulongs) => ulongs.iter().map(|v| *v as u16).collect(),
+            RawValue::Floats(floats) => floats.iter().map(|v| *v as u16).collect(),
+            RawValue::Doubles(doubles) => doubles.iter().map(|v| *v as u16).collect(),
+            RawValue::Shorts(shorts) => shorts.iter().map(|v| *v as u16).collect(),
+            _ => Vec::with_capacity(0),
+        }
+    }
+
+    #[must_use]
+    pub fn ints(&self) -> Vec<i32> {
+        match self {
+            RawValue::Ints(ints) => ints.to_owned(),
+            RawValue::UInts(uints) => uints.iter().map(|v| *v as i32).collect(),
+            RawValue::Longs(longs) => longs.iter().map(|v| *v as i32).collect(),
+            RawValue::ULongs(ulongs) => ulongs.iter().map(|v| *v as i32).collect(),
+            RawValue::Floats(floats) => floats.iter().map(|v| *v as i32).collect(),
+            RawValue::Doubles(doubles) => doubles.iter().map(|v| *v as i32).collect(),
+            RawValue::UShorts(ushorts) => ushorts.iter().map(|v| *v as i32).collect(),
+            RawValue::Shorts(shorts) => shorts.iter().map(|v| i32::from(*v)).collect(),
+            _ => Vec::with_capacity(0),
+        }
+    }
+
+    #[must_use]
+    pub fn uints(&self) -> Vec<u32> {
+        match self {
+            RawValue::UInts(uints) => uints.to_owned(),
+            RawValue::Longs(longs) => longs.iter().map(|v| *v as u32).collect(),
+            RawValue::ULongs(ulongs) => ulongs.iter().map(|v| *v as u32).collect(),
+            RawValue::Floats(floats) => floats.iter().map(|v| *v as u32).collect(),
+            RawValue::Doubles(doubles) => doubles.iter().map(|v| *v as u32).collect(),
+            RawValue::Ints(ints) => ints.iter().map(|v| *v as u32).collect(),
+            RawValue::UShorts(ushorts) => ushorts.iter().map(|v| u32::from(*v)).collect(),
+            RawValue::Shorts(shorts) => shorts.iter().map(|v| *v as u32).collect(),
+            _ => Vec::with_capacity(0),
+        }
+    }
+
+    #[must_use]
+    pub fn longs(&self) -> Vec<i64> {
+        match self {
+            RawValue::Longs(longs) => longs.to_owned(),
+            RawValue::ULongs(ulongs) => ulongs.iter().map(|v| *v as i64).collect(),
+            RawValue::Floats(floats) => floats.iter().map(|v| *v as i64).collect(),
+            RawValue::Doubles(doubles) => doubles.iter().map(|v| *v as i64).collect(),
+            RawValue::UInts(uints) => uints.iter().map(|v| *v as i64).collect(),
+            RawValue::Ints(ints) => ints.iter().map(|v| i64::from(*v)).collect(),
+            RawValue::UShorts(ushorts) => ushorts.iter().map(|v| *v as i64).collect(),
+            RawValue::Shorts(shorts) => shorts.iter().map(|v| i64::from(*v)).collect(),
+            _ => Vec::with_capacity(0),
+        }
+    }
+
+    #[must_use]
+    pub fn ulongs(&self) -> Vec<u64> {
+        match self {
+            RawValue::ULongs(ulongs) => ulongs.to_owned(),
+            RawValue::Floats(floats) => floats.iter().map(|v| *v as u64).collect(),
+            RawValue::Doubles(doubles) => doubles.iter().map(|v| *v as u64).collect(),
+            RawValue::Longs(longs) => longs.iter().map(|v| *v as u64).collect(),
+            RawValue::UInts(uints) => uints.iter().map(|v| u64::from(*v)).collect(),
+            RawValue::Ints(ints) => ints.iter().map(|v| *v as u64).collect(),
+            RawValue::UShorts(ushorts) => ushorts.iter().map(|v| u64::from(*v)).collect(),
+            RawValue::Shorts(shorts) => shorts.iter().map(|v| *v as u64).collect(),
+            _ => Vec::with_capacity(0),
+        }
+    }
+
+    #[must_use]
+    pub fn floats(&self) -> Vec<f32> {
+        match self {
+            RawValue::Floats(floats) => floats.to_owned(),
+            RawValue::Doubles(doubles) => doubles.iter().map(|v| *v as f32).collect(),
+            RawValue::ULongs(ulongs) => ulongs.iter().map(|v| *v as f32).collect(),
+            RawValue::Longs(longs) => longs.iter().map(|v| *v as f32).collect(),
+            RawValue::UInts(uints) => uints.iter().map(|v| *v as f32).collect(),
+            RawValue::Ints(ints) => ints.iter().map(|v| *v as f32).collect(),
+            RawValue::UShorts(ushorts) => ushorts.iter().map(|v| *v as f32).collect(),
+            RawValue::Shorts(shorts) => shorts.iter().map(|v| *v as f32).collect(),
+            _ => Vec::with_capacity(0),
+        }
+    }
+
+    #[must_use]
+    pub fn doubles(&self) -> Vec<f64> {
+        match self {
+            RawValue::Doubles(doubles) => doubles.to_owned(),
+            RawValue::Floats(floats) => floats.iter().map(|v| f64::from(*v)).collect(),
+            RawValue::ULongs(ulongs) => ulongs.iter().map(|v| *v as f64).collect(),
+            RawValue::Longs(longs) => longs.iter().map(|v| *v as f64).collect(),
+            RawValue::UInts(uints) => uints.iter().map(|v| f64::from(*v)).collect(),
+            RawValue::Ints(ints) => ints.iter().map(|v| f64::from(*v)).collect(),
+            RawValue::UShorts(ushorts) => ushorts.iter().map(|v| f64::from(*v)).collect(),
+            RawValue::Shorts(shorts) => shorts.iter().map(|v| f64::from(*v)).collect(),
+            _ => Vec::with_capacity(0),
         }
     }
 }

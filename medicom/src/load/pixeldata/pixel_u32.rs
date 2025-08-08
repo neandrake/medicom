@@ -16,9 +16,8 @@
 
 use crate::load::pixeldata::{
     pdinfo::{PixelDataSliceInfo, I32_SIZE, U32_SIZE},
-    pdslice::PixelDataSlice,
-    pdwinlevel::WindowLevel,
-    PhotoInterp, LoadError,
+    winlevel::WindowLevel,
+    LoadError, PhotoInterp, PixelDataSlice,
 };
 
 pub struct PixelDataSliceU32 {
@@ -124,9 +123,7 @@ impl PixelDataSliceU32 {
     pub fn into_i16(self) -> Result<(PixelDataSliceInfo, Vec<i16>), LoadError> {
         let mut buffer: Vec<i16> = Vec::with_capacity(self.buffer.len());
         for v in &self.buffer {
-            buffer.push(
-                i16::try_from(*v).map_err(|e| LoadError::PixelValueError { source: e })?,
-            );
+            buffer.push(i16::try_from(*v).map_err(|e| LoadError::PixelValueError { source: e })?);
         }
         Ok((self.info, buffer))
     }

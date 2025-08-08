@@ -23,10 +23,9 @@ use crate::{
     dict::tags,
     load::{
         pixeldata::{
-            pdinfo::PixelDataSliceInfo, pdwinlevel::WindowLevel, pixel_i16::PixelDataSliceI16,
-            pixel_i32::PixelDataSliceI32, pixel_u16::PixelDataSliceU16,
-            pixel_u32::PixelDataSliceU32, pixel_u8::PixelDataSliceU8, BitsAlloc, PhotoInterp,
-            LoadError,
+            pdinfo::PixelDataSliceInfo, pixel_i16::PixelDataSliceI16, pixel_i32::PixelDataSliceI32,
+            pixel_u16::PixelDataSliceU16, pixel_u32::PixelDataSliceU32, pixel_u8::PixelDataSliceU8,
+            winlevel::WindowLevel, BitsAlloc, LoadError, PhotoInterp,
         },
         IndexVec, VolAxis, VolDims, VolPixel, EPSILON_F32,
     },

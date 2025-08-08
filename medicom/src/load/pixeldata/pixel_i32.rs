@@ -14,11 +14,14 @@
    limitations under the License.
 */
 
-use crate::load::{pixeldata::{
-    pdinfo::{PixelDataSliceInfo, I32_SIZE, U32_SIZE},
-    pdwinlevel::WindowLevel,
-    PhotoInterp, LoadError,
-}, EPSILON_F32};
+use crate::load::{
+    pixeldata::{
+        pdinfo::{PixelDataSliceInfo, I32_SIZE, U32_SIZE},
+        winlevel::WindowLevel,
+        LoadError, PhotoInterp,
+    },
+    EPSILON_F32,
+};
 
 pub struct PixelDataSliceI32 {
     info: PixelDataSliceInfo,
@@ -143,9 +146,7 @@ impl PixelDataSliceI32 {
     pub fn into_i16(self) -> Result<(PixelDataSliceInfo, Vec<i16>), LoadError> {
         let mut buffer: Vec<i16> = Vec::with_capacity(self.buffer.len());
         for v in &self.buffer {
-            buffer.push(
-                i16::try_from(*v).map_err(|e| LoadError::PixelValueError { source: e })?,
-            );
+            buffer.push(i16::try_from(*v).map_err(|e| LoadError::PixelValueError { source: e })?);
         }
         Ok((self.info, buffer))
     }

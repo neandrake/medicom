@@ -14,11 +14,14 @@
    limitations under the License.
 */
 
-use crate::load::{pixeldata::{
-    pdinfo::{PixelDataSliceInfo, I16_SIZE, I8_SIZE, U16_SIZE},
-    pdwinlevel::WindowLevel,
-    PhotoInterp, LoadError,
-}, EPSILON_F32};
+use crate::load::{
+    pixeldata::{
+        pdinfo::{PixelDataSliceInfo, I16_SIZE, I8_SIZE, U16_SIZE},
+        winlevel::WindowLevel,
+        LoadError, PhotoInterp,
+    },
+    EPSILON_F32,
+};
 
 pub struct PixelDataSliceI16 {
     info: PixelDataSliceInfo,

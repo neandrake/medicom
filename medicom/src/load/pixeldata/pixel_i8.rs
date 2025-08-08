@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-use crate::load::pixeldata::{pdinfo::PixelDataSliceInfo, pdwinlevel::WindowLevel, PhotoInterp};
+use crate::load::pixeldata::{pdinfo::PixelDataSliceInfo, winlevel::WindowLevel, PhotoInterp};
 
 pub struct PixelDataSliceI8 {
     info: PixelDataSliceInfo,
