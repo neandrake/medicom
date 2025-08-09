@@ -275,26 +275,29 @@ impl VolDims {
         !dim.is_nan() && dim > 0f32
     }
 
+    /// The location in space of the top-left pixel of the first slice.
     #[must_use]
     pub fn origin(&self) -> DicomVec {
         self.origin
     }
 
+    /// The number of pixels in each dimension.
     #[must_use]
     pub fn counts(&self) -> IndexVec {
         self.counts
     }
 
+    /// The dimensions of a single voxel in this volume.
     #[must_use]
     pub fn voxel_dims(&self) -> DicomVec {
         self.voxel_dims
     }
 
-    pub fn inc_z_count(&mut self) {
+    pub(crate) fn inc_z_count(&mut self) {
         self.counts.z += 1;
     }
 
-    pub fn set_origin(&mut self, origin: DicomVec) {
+    pub(crate) fn set_origin(&mut self, origin: DicomVec) {
         self.origin = origin;
     }
 

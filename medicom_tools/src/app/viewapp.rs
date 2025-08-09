@@ -28,7 +28,6 @@ use medicom::load::{
 };
 use std::{
     fs::File,
-    ops::Deref,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
     thread,
@@ -190,13 +189,29 @@ impl DicomFileImageLoader {
             .minmax_winlevel()
             .with_out(f32::from(u8::MIN), f32::from(u8::MAX));
 
+        // TODO: Create a uniform volume and use interpolation.
+
+        // Size the image in the maximum dimension, using filler before and after so it will
+        // vertically center.
         let axis_dims = imgvol.axis_dims(axis);
+        let max = axis_dims.x.max(axis_dims.y.max(axis_dims.z));
+        let fill = (max * max) - (axis_dims.x * axis_dims.y);
+        // Ensure that the fill content on either side is evenly divisible by the image dimension
+        // otherwise it will cause the image to be shifted.
+        let half_fill = fill / 2;
+        let over = half_fill % max;
+        let (prefill, postfill) = (half_fill + over, half_fill - over);
 
         #[allow(clippy::cast_possible_truncation)]
-        let iter = imgvol
-            .slice_iter(axis, slice_index)
-            .map(|p| win.apply(p.r) as u8);
-        ColorImage::from_gray_iter([axis_dims.x, axis_dims.y], iter)
+        let iter = std::iter::repeat_n(0, prefill)
+            .chain(
+                imgvol
+                    .slice_iter(axis, slice_index)
+                    .map(|p| win.apply(p.r) as u8),
+            )
+            .chain(std::iter::repeat_n(0, postfill));
+
+        ColorImage::from_gray_iter([max, max], iter)
     }
 }
 
@@ -373,6 +388,7 @@ impl eframe::App for ImageViewer {
                 return;
             }
 
+            let vox_dims = imgvol.dims().voxel_dims();
             let axis = self.view_axis.clone();
             let axis_dims = imgvol.axis_dims(&axis);
             let num_slices = axis_dims.z;
@@ -411,6 +427,10 @@ impl eframe::App for ImageViewer {
                 "Top-left Loc: {:.2}, {:.2}, {:.2}",
                 dcm_pos.x, dcm_pos.y, dcm_pos.z
             ));
+            ui.label(format!(
+                "Voxel Dims: {:.2}mm x {:.2}mm x {:.2}mm",
+                vox_dims.x, vox_dims.y, vox_dims.z
+            ));
             ui.label(format!("Slice Dims: {}x{}", axis_dims.x, axis_dims.y));
             ui.label(imgvol.series_desc());
 
@@ -421,8 +441,12 @@ impl eframe::App for ImageViewer {
             // to the ui), otherwise it results in a deadlock.
             drop(workspace);
 
-            let slice_key = SliceKey::from((&series_key, axis, self.current_slice));
-            ui.add(egui::Image::from_uri(slice_key.to_string()));
+            egui::Frame::new()
+                //.stroke((1_f32, Color32::MAGENTA))
+                .show(ui, |ui| {
+                    let slice_key = SliceKey::from((&series_key, axis, self.current_slice));
+                    ui.add(egui::Image::from_uri(slice_key.to_string()));
+                });
         });
     }
 }
