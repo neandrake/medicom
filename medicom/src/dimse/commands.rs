@@ -515,7 +515,7 @@ impl SubOpProgress {
 
     /// Create the individual elements that will report this progress.
     #[must_use]
-    pub fn as_elements(&self, status: &CommandStatus) -> Vec<(&Tag, RawValue)> {
+    pub fn as_elements(&'_ self, status: &CommandStatus) -> Vec<(&'_ Tag, RawValue<'_>)> {
         // A status of successful, failed, or warning shall NOT contain Number of Remaining.
         let mut elements = Vec::<(&Tag, RawValue)>::with_capacity(4);
         if status.is_pending() || status.is_canceled() {

@@ -428,7 +428,7 @@ impl ImageVolume {
     }
 
     #[must_use]
-    pub fn slice_iter(&self, axis: &VolAxis, axis_index: usize) -> ImageVolumeAxisSliceIter {
+    pub fn slice_iter(&'_ self, axis: &VolAxis, axis_index: usize) -> ImageVolumeAxisSliceIter<'_> {
         ImageVolumeAxisSliceIter {
             vol: self,
             axis: axis.clone(),

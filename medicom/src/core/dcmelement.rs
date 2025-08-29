@@ -278,7 +278,7 @@ impl DicomElement {
     ///
     /// # Errors
     /// Decoding of the element's value may fail.
-    pub fn parse_value(&self) -> ParseResult<RawValue> {
+    pub fn parse_value(&'_ self) -> ParseResult<RawValue<'_>> {
         RawValue::try_from(self)
     }
 
@@ -287,7 +287,7 @@ impl DicomElement {
     ///
     /// # Errors
     /// Decoding of the element's value based on the given VR may fail.
-    pub fn parse_value_as(&self, vr: VRRef) -> ParseResult<RawValue> {
+    pub fn parse_value_as(&'_ self, vr: VRRef) -> ParseResult<RawValue<'_>> {
         RawValue::try_from(&ElementWithVr(self, vr))
     }
 

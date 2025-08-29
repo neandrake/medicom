@@ -169,12 +169,12 @@ impl DicomRoot {
     }
 
     /// Returns an iterator for the item nodes in this `DicomRoot`.
-    pub fn iter_items(&self) -> std::slice::Iter<DicomObject> {
+    pub fn iter_items(&'_ self) -> std::slice::Iter<'_, DicomObject> {
         self.sentinel.iter_items()
     }
 
     /// Returns an iterator for the mutable item nodes in this `DicomRoot`.
-    pub fn iter_items_mut(&mut self) -> std::slice::IterMut<DicomObject> {
+    pub fn iter_items_mut(&'_ mut self) -> std::slice::IterMut<'_, DicomObject> {
         self.sentinel.iter_items_mut()
     }
 
@@ -205,7 +205,7 @@ impl DicomRoot {
 
     /// Get a child element's value by element tag.
     #[must_use]
-    pub fn get_value_by_tag<T>(&self, tag: T) -> Option<RawValue>
+    pub fn get_value_by_tag<T>(&'_ self, tag: T) -> Option<RawValue<'_>>
     where
         u32: From<T>,
     {
@@ -214,7 +214,7 @@ impl DicomRoot {
 
     /// Get a child element's value by element tag, parsed as the given VR.
     #[must_use]
-    pub fn get_value_as_by_tag<T>(&self, tag: T, vr: VRRef) -> Option<RawValue>
+    pub fn get_value_as_by_tag<T>(&'_ self, tag: T, vr: VRRef) -> Option<RawValue<'_>>
     where
         u32: From<T>,
     {
@@ -223,13 +223,13 @@ impl DicomRoot {
 
     /// Get a descendant element's value by tagpath.
     #[must_use]
-    pub fn get_value_by_tagpath(&self, tagpath: &TagPath) -> Option<RawValue> {
+    pub fn get_value_by_tagpath(&'_ self, tagpath: &TagPath) -> Option<RawValue<'_>> {
         self.sentinel.get_value_by_tagpath(tagpath)
     }
 
     /// Get a descendant element's value by tagpath, parsed as the given VR.
     #[must_use]
-    pub fn get_value_as_by_tagpath(&self, tagpath: &TagPath, vr: VRRef) -> Option<RawValue> {
+    pub fn get_value_as_by_tagpath(&'_ self, tagpath: &TagPath, vr: VRRef) -> Option<RawValue<'_>> {
         self.sentinel.get_value_as_by_tagpath(tagpath, vr)
     }
 
@@ -553,12 +553,12 @@ impl DicomObject {
     }
 
     /// Returns an iterator for the item nodes in this `DicomObject`.
-    pub fn iter_items(&self) -> std::slice::Iter<DicomObject> {
+    pub fn iter_items(&'_ self) -> std::slice::Iter<'_, DicomObject> {
         self.items.iter()
     }
 
     /// Returns an iterator for the mutable item nodes in this `DicomObject`.
-    pub fn iter_items_mut(&mut self) -> std::slice::IterMut<DicomObject> {
+    pub fn iter_items_mut(&'_ mut self) -> std::slice::IterMut<'_, DicomObject> {
         self.items.iter_mut()
     }
 
@@ -608,7 +608,7 @@ impl DicomObject {
 
     /// Get a child element's value by element tag.
     #[must_use]
-    pub fn get_value_by_tag<T>(&self, tag: T) -> Option<RawValue>
+    pub fn get_value_by_tag<T>(&'_ self, tag: T) -> Option<RawValue<'_>>
     where
         u32: From<T>,
     {
@@ -619,7 +619,7 @@ impl DicomObject {
 
     /// Get a child element's value by element tag, parsed as the given VR.
     #[must_use]
-    pub fn get_value_as_by_tag<T>(&self, tag: T, vr: VRRef) -> Option<RawValue>
+    pub fn get_value_as_by_tag<T>(&'_ self, tag: T, vr: VRRef) -> Option<RawValue<'_>>
     where
         u32: From<T>,
     {
@@ -630,14 +630,14 @@ impl DicomObject {
 
     /// Get a descendant element's value by tagpath.
     #[must_use]
-    pub fn get_value_by_tagpath(&self, tagpath: &TagPath) -> Option<RawValue> {
+    pub fn get_value_by_tagpath(&'_ self, tagpath: &TagPath) -> Option<RawValue<'_>> {
         self.get_child_by_tagpath(tagpath)
             .and_then(|o| o.element().parse_value().ok())
     }
 
     /// Get a descendant element's value by tagpath, parsed as a given VR.
     #[must_use]
-    pub fn get_value_as_by_tagpath(&self, tagpath: &TagPath, vr: VRRef) -> Option<RawValue> {
+    pub fn get_value_as_by_tagpath(&'_ self, tagpath: &TagPath, vr: VRRef) -> Option<RawValue<'_>> {
         self.get_child_by_tagpath(tagpath)
             .and_then(|o| o.element().parse_value_as(vr).ok())
     }
