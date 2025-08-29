@@ -248,10 +248,60 @@ pub struct DicomVec {
     pub z: f32,
 }
 
+impl DicomVec {
+    pub fn mul(&self, other: &DicomVec) -> Self {
+        Self {
+            x: self.x * other.x,
+            y: self.y * other.y,
+            z: self.z * other.z,
+        }
+    }
+
+    pub fn mul_self(&mut self, other: &DicomVec) {
+        self.x *= other.x;
+        self.y *= other.y;
+        self.z *= other.z;
+    }
+
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(value: &str) -> Option<DicomVec> {
+        let parts = value.split(',').collect::<Vec<&str>>();
+        if parts.len() != 3 {
+            return None;
+        }
+
+        let x = parts[0].parse::<f32>().ok()?;
+        let y = parts[1].parse::<f32>().ok()?;
+        let z = parts[2].parse::<f32>().ok()?;
+
+        Some(DicomVec { x, y, z })
+    }
+}
+
+impl std::fmt::Display for DicomVec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:.2},{:.2},{:.2}", self.x, self.y, self.z)
+    }
+}
+
+impl PartialEq for DicomVec {
+    fn eq(&self, other: &Self) -> bool {
+        (self.x - other.x).abs() < EPSILON_F32
+            && (self.y - other.y).abs() < EPSILON_F32
+            && (self.z - other.z).abs() < EPSILON_F32
+    }
+}
+
+impl Eq for DicomVec {}
+
 #[derive(Debug, Default)]
 pub struct VolDims {
-    /// The coordinate in DICOM space of the volume's origin (top-left of first slice in z-axis).
+    /// The coordinate in DICOM space of the volume's origin.
+    /// The center of the voxel in the top-left of the first slice in z-axis.
     origin: DicomVec,
+    /// The coordinate in DICOM space of the opposite corner to the origin for the volume.
+    /// The center of the voxel in the bottom-right of the last slice in z-axis.
+    opp_origin: DicomVec,
     /// The number of voxels across each axis.
     counts: IndexVec,
     /// The distance in mm between voxels.
@@ -260,9 +310,15 @@ pub struct VolDims {
 
 impl VolDims {
     #[must_use]
-    pub fn new(origin: DicomVec, counts: IndexVec, voxel_dims: DicomVec) -> Self {
+    pub fn new(
+        origin: DicomVec,
+        opp_origin: DicomVec,
+        counts: IndexVec,
+        voxel_dims: DicomVec,
+    ) -> Self {
         Self {
             origin,
+            opp_origin,
             counts,
             voxel_dims,
         }
@@ -279,6 +335,21 @@ impl VolDims {
     #[must_use]
     pub fn origin(&self) -> DicomVec {
         self.origin
+    }
+
+    #[must_use]
+    pub fn opp_origin(&self) -> DicomVec {
+        self.opp_origin
+    }
+
+    #[must_use]
+    pub fn contains(&self, coord: DicomVec) -> bool {
+        coord.x >= self.origin.x
+            && coord.x <= self.opp_origin.x
+            && coord.y >= self.origin.y
+            && coord.y <= self.opp_origin.y
+            && coord.z >= self.origin.z
+            && coord.z <= self.opp_origin.z
     }
 
     /// The number of pixels in each dimension.
@@ -299,6 +370,10 @@ impl VolDims {
 
     pub(crate) fn set_origin(&mut self, origin: DicomVec) {
         self.origin = origin;
+    }
+
+    pub(crate) fn set_opp_origin(&mut self, opp_origin: DicomVec) {
+        self.opp_origin = opp_origin;
     }
 
     /// Compares one `VolDims` with another checking exact dimension matching except for the
@@ -343,7 +418,7 @@ impl std::fmt::Display for VolDims {
 }
 
 /// Axes of an `ImageVolume`. The `Z` axis is the native plane for the dicom dataset.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum VolAxis {
     X,
     Y,

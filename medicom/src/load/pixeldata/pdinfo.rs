@@ -593,7 +593,13 @@ impl PixelDataSliceInfo {
             z: z_mm,
         };
 
-        VolDims::new(origin, count, mm)
+        let opp_origin = DicomVec {
+            x: origin.x + (x_mm * (count.x as f32 - 1_f32)),
+            y: origin.y + (y_mm * (count.y as f32 - 1_f32)),
+            z: origin.z + (z_mm * (count.z as f32 - 1_f32)),
+        };
+
+        VolDims::new(origin, opp_origin, count, mm)
     }
 
     #[must_use]
