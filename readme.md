@@ -5,10 +5,19 @@ The `medicom` library provides baseline functionality for managing DICOM,
 including reading and writing DICOM files, decoding the PixelData element, and
 the DIMSE network protocol (C-ECHO, C-FIND, C-STORE, C-MOVE, C-GET).
 
-See the `medicom_tools` sub-crate for example command-line utilities built using
-the library:
+See the `medicom_tools` sub-crate for command-line utilities built to test out
+the library.
 
-![Screenshot](static_assets/screenshot.png "Screenshot")
+```
+$ medicom_tools view "..."
+```
+
+![Viewer Screenshot](static_assets/viewer.png "Viewer Screenshot")
+
+```
+$ medicom_tools inspect "..."
+```
+![Inspect Screenshot](static_assets/inspector.png "Inspect Screenshot")
 
 ## Quick Examples ##
 
@@ -44,52 +53,46 @@ for element_res in parser {
     if let Some(tag_value) = element.parse_value()?.string() {
         println!("{tag_name}: {tag_value}");
     }
-    
+
     // Refer to the `core::inspect` module for utilities to assist with
     // formatting DICOM element names and values.
 }
 ```
 
-### Decode PixelData for a DICOM SOP Instance.
+### Decode PixelData for a DICOM SOP Instance, load into an `image::ImageBuffer`
 ```rust
-// 1. Set up a parser for a DICOM file.
+// 1. Parse the DICOM file.
 let parser: Parser<'_, File> = ParserBuidler::default()
     .build(file, &STANDARD_DICOM_DICTIONARY);
 
-// 2. Process and load the PixelData into memory.
-let pixeldata_slice = PixelDataInfo::process_dcm_parser(parser)?
-    .load_pixel_data()?;
+let Some(dcmroot) = DicomRoot::parse(&mut parser)? else {
+    return Err(anyhow!("DICOM SOP is missing PixelData"));
+};
 
-// 3. Use the loaded PixelData values.
-match pixeldata_slice {
-    // The U8 variant will be common for most RGB image data and `pixel_iter()`
-    // provides an iterator over the raw pixel values.
-    PixelDataSlice::U8(pdslice) => {
-        let (width, height) = (pdslice.info().cols(), pdslice.info().rows());
+// 2. Create an `ImageVolume` and load the DICOM file.
+let mut imgvol = ImageVolume::default();
+imgvol.load_slice(dcmroot)?;
 
-        for PixelU8 { x, y, r, g, b } in pdslice.pixel_iter() {
-            // The x, y are usize, within the width and height of the image.
-            // The r, g, b are u8, represents the respective pixel color
-            // component.
-        }
-    }
+let axis = VolAxis::Z;
+let axis_dims = imgvol.axis_dims(&axis);
+let win = imgvol
+    .minmax_winlevel()
+    .with_out(f32::from(u8::MIN), f32::from(u8::MAX));
 
-    // The I16 variant will be common for most monochrome image data and
-    // `pixel_iter()` provides an iterator over pixels values normalized to I16
-    // and rescale applied.
-    PixelDataBuffer::I16(pdslice) => {
-        let (width, height) = (pdslice.info().cols(), pdslice.info().rows());
-
-        for PixelI16 { x, y, r, g, b } in pdslice.pixel_iter() {
-            // The x, y are usize, within the width and height of the image.
-            // The r, g, b are i16, and the same value for monochrome.
-        }
-    }
-
-    // There are U8, U16, U32, I8, I16, and I32 variants, depending on the
-    // DICOM's encoded values. See `PixelDataSlice::load_pixel_data()` for
-    // details on when to expect which variants.
-    _ => {}
+// 3. Iterate through the pixels of a specific slice (0, only one slice in this example).
+//    Use the Z / native axis. X or Y can be used for multi-planar reconstruction views.
+let mut image: ImageBuffer<Rgb<u8>, Vec<u8>> =
+    ImageBuffer::new(u32::try_from(axis_dims.x)?, u32::try_from(axis_dims.y)?);
+for pix in imgvol.slice_iter(&axis, 0) {
+    // Apply the `WindowLevel` which maps the range of values in the volume to the range of u8.
+    #[allow(clippy::cast_possible_truncation)]
+    let val = win.apply(pix.r) as u8;
+    image.put_pixel(
+        u32::try_from(pix.coord.x)?,
+        u32::try_from(pix.coord.y)?,
+        // For monochromatic the voxel value is used for R, G, and B.
+        Rgb([val, val, val]),
+    );
 }
 ```
 
@@ -136,10 +139,10 @@ The API is also focused on enabling efficient operations:
 
 ## Crates ##
 
-- `medicom_tools`: Example command-line tools using the `medicom` library. See
-  the `readme.md` within that folder for more information.
 - `medicom`: The core API for reading and writing DICOM, decoding images,and
-  optional support for the DICOM Message Exchange network protocol.
+optional support for the DICOM Message Exchange network protocol.
 - `medicom_dict`: Parses the DICOM Standard XML files for producing the
   standard DICOM dictionary. This is intended to be used by `build.rs` scripts.
+- `medicom_tools`: Example command-line tools using the `medicom` library. See
+the `readme.md` within that folder for more information.
 

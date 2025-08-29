@@ -14,7 +14,7 @@
    limitations under the License.
 */
 
-//! The browse command opens a TUI for navigating through a DICOM data set.
+//! The inspect command opens a TUI for navigating through a DICOM data set.
 
 use std::{
     cmp::Ordering,
@@ -58,21 +58,21 @@ use ratatui::{
     Frame, Terminal,
 };
 
-use crate::{app::CommandApplication, args::BrowseArgs};
+use crate::{app::CommandApplication, args::InspectArgs};
 
-pub struct BrowseApp {
-    args: BrowseArgs,
+pub struct InspectApp {
+    args: InspectArgs,
 }
 
 #[derive(Debug)]
-enum BrowseError {
+enum InspectError {
     InvalidTagPath(TagPath),
 }
 
-impl std::fmt::Display for BrowseError {
+impl std::fmt::Display for InspectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BrowseError::InvalidTagPath(tagpath) => {
+            InspectError::InvalidTagPath(tagpath) => {
                 let rendered = if tagpath.is_empty() {
                     "<empty>".to_owned()
                 } else {
@@ -84,7 +84,7 @@ impl std::fmt::Display for BrowseError {
     }
 }
 
-impl std::error::Error for BrowseError {}
+impl std::error::Error for InspectError {}
 
 /// Options for display/formatting.
 struct DisplayOpts {
@@ -182,7 +182,7 @@ impl InputMode {
     }
 }
 
-impl CommandApplication for BrowseApp {
+impl CommandApplication for InspectApp {
     fn run(&mut self) -> Result<()> {
         let path: &Path = self.args.file.as_path();
         let mut parser = super::parse_file(path, true)?;
@@ -215,9 +215,9 @@ impl CommandApplication for BrowseApp {
     }
 }
 
-impl<'app> BrowseApp {
-    pub fn new(args: BrowseArgs) -> BrowseApp {
-        BrowseApp { args }
+impl<'app> InspectApp {
+    pub fn new(args: InspectArgs) -> InspectApp {
+        InspectApp { args }
     }
 
     fn init() -> Result<Terminal<CrosstermBackend<Stdout>>> {
@@ -264,7 +264,7 @@ impl<'app> BrowseApp {
             }
 
             let Some(table_model) = doc_model.node_models.get(&current_tagpath) else {
-                return Err(BrowseError::InvalidTagPath(current_tagpath).into());
+                return Err(InspectError::InvalidTagPath(current_tagpath).into());
             };
 
             let mut view_state = doc_model
@@ -615,7 +615,7 @@ impl<'app> BrowseApp {
                 Block::default()
                     .title_top(
                         Line::from(Span::styled(
-                            "[DICOM Browser]".to_string(),
+                            "[DICOM Inspector]".to_string(),
                             Style::default().add_modifier(Modifier::BOLD),
                         ))
                         .alignment(Alignment::Left),
@@ -848,7 +848,7 @@ fn get_tagpath_from_user_action<'app>(
                     .map_or_else(|| current_tagpath.clone(), |o| o.element().create_tagpath())
             } else {
                 if dcmroot.get_child_by_tagpath(&current_tagpath).is_none() {
-                    return Err(BrowseError::InvalidTagPath(current_tagpath).into());
+                    return Err(InspectError::InvalidTagPath(current_tagpath).into());
                 }
                 dcmroot
                     .get_child_by_tagpath(&current_tagpath)

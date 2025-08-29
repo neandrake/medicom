@@ -28,7 +28,7 @@ use crate::app::{indexapp::IndexApp, scpapp::SvcProviderApp};
 
 use crate::{
     app::{
-        archiveapp::ArchiveApp, browseapp::BrowseApp, printapp::PrintApp, scuapp::SvcUserApp,
+        archiveapp::ArchiveApp, inspectapp::InspectApp, printapp::PrintApp, scuapp::SvcUserApp,
         CommandApplication,
     },
     args::{Arguments, Command},
@@ -58,16 +58,15 @@ fn make_app() -> Box<dyn CommandApplication> {
 
     match args.command {
         Command::Print(args) => Box::new(PrintApp::new(args)),
-        Command::Browse(args) => Box::new(BrowseApp::new(args)),
         #[cfg(feature = "image")]
         Command::Extract(args) => Box::new(ExtractApp::new(args)),
-        #[cfg(feature = "image")]
-        Command::View(args) => Box::new(ViewApp::new(args)),
+        Command::Inspect(args) => Box::new(InspectApp::new(args)),
         #[cfg(feature = "index")]
         Command::Index(args) => Box::new(IndexApp::new(args)),
         Command::Archive(args) => Box::new(ArchiveApp::new(args)),
         #[cfg(feature = "index")] // Running SCP service requires the archive database.
         Command::Scp(args) => Box::new(SvcProviderApp::new(args)),
         Command::Scu(args) => Box::new(SvcUserApp::new(args)),
+        Command::View(args) => Box::new(ViewApp::new(args)),
     }
 }

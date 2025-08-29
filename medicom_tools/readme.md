@@ -10,8 +10,9 @@ Usage: medicom_tools <COMMAND>
 
 Commands:
   print    Parses a single file and prints the DICOM elements to stdout
-  image    Encodes PixelData into a standard image format
-  browse   Browse a DICOM dataset in a text-based user interface
+  inspect  Inspect a DICOM dataset in a text-based user interface
+  extract  Extract Pixel Data from a DICOM file into a standard image format
+  view     Loads a single file or directory of files into a GUI window
   index    Manage a database index of DICOM on disk
   archive  Archives DICOM datasets from a source folder into a destination folder
   scp      Starts an SCP service
@@ -36,12 +37,12 @@ Options:
   -h, --help  Print help
 ```
 
-## Browse
+## Inspect
 ```lang=console
-$ ./medicom_tools help browse
-Browse a DICOM dataset in a text-based user interface
+$ ./medicom_tools help inspect
+Inspect a DICOM dataset in a text-based user interface
 
-Usage: medicom_tools browse <FILE>
+Usage: medicom_tools inspect <FILE>
 
 Arguments:
   <FILE>  The file to process as a DICOM dataset
@@ -50,12 +51,12 @@ Options:
   -h, --help  Print help
 ```
 
-## Image
+## Extract
 ```lang=console
-$ ./medicom_tools help image
-Encodes PixelData into a standard image format
+$ ./medicom_tools help extract
+Extract Pixel Data from a DICOM file into a standard image format
 
-Usage: medicom_tools image <FILE> <OUTPUT>
+Usage: medicom_tools extract <FILE> <OUTPUT>
 
 Arguments:
   <FILE>    The DICOM file to extract image data from
@@ -92,7 +93,9 @@ Options:
 $ ./medicom_tools help archive
 Archives DICOM datasets from a source folder into a destination folder.
 
-The source folder is assumed to be unstructured whereas the DICOM datasets will be copied into the destination folder in a consistent structure: - One series per folder - Each DICOM file will be named in the format `[SOP_UID].dcm`
+The source folder is assumed to be unstructured whereas the DICOM datasets will
+be copied into the destination folder in a consistent structure: - One series
+per folder - Each DICOM file will be named in the format `[SOP_UID].dcm`
 
 Usage: medicom_tools archive <SOURCE> <DESTINATION>
 
@@ -125,7 +128,8 @@ Options:
   -m, --max-pdu-size <MAX_PDU_SIZE>
           The maximum PDU size to receive.
 
-          Size is specified in bytes and should be no more than `u32::MAX`. If not specified then no maximum is configured.
+          Size is specified in bytes and should be no more than `u32::MAX`.
+          If not specified then no maximum is configured.
 
   -m, --max-assoc <MAX_ASSOC>
           The maximum number of concurrent associations
@@ -133,14 +137,20 @@ Options:
   -d, --db <DB>
           The database URL for resolving DIMSE queries.
 
-          If not specified then Query/Retrieve will not return results, and Store will not persist received series.
+          If not specified then Query/Retrieve will not return results, and
+          Store will not persist received series.
 
   -a, --accept-aet <ACCEPT_AET>
-          Specifies an accepted AE Title for associations. Can be specified multiple times.
+          Specifies an accepted AE Title for associations. Can be specified
+          multiple times.
 
-          The format for each accepted AE Title is `key=val` where `key` is a valid AE Title such as `MY_AE`, and `val` is the IP + port such as `127.0.0.1:4001`.
+          The format for each accepted AE Title is `key=val` where `key` is a
+          valid AE Title such as `MY_AE`, and `val` is the IP + port such as
+          `127.0.0.1:4001`.
 
-          If no accepted AE Titles are specified then all AE Titles are accepted, but cannot be connected to, such as for handling C-MOVE requests.
+          If no accepted AE Titles are specified then all AE Titles are
+          accepted, but cannot be connected to, such as for handling C-MOVE
+          requests.
 
   -h, --help
           Print help (see a summary with '-h')

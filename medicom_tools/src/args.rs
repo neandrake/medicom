@@ -31,14 +31,14 @@ pub enum Command {
     /// Parses a single file and prints the DICOM elements to stdout.
     Print(PrintArgs),
 
-    /// Browse a DICOM dataset in a text-based user interface.
-    Browse(BrowseArgs),
+    /// Inspect a DICOM dataset in a text-based user interface.
+    Inspect(InspectArgs),
 
     /// Extract Pixel Data from a DICOM file into a standard image format.
     #[cfg(feature = "image")]
     Extract(ExtractArgs),
 
-    /// Opens a window to view image data for a DICOM file.
+    /// Loads a single file or directory of files into a GUI window.
     #[cfg(feature = "image")]
     View(ViewArgs),
 
@@ -71,7 +71,7 @@ pub struct PrintArgs {
 }
 
 #[derive(Args, Debug)]
-pub struct BrowseArgs {
+pub struct InspectArgs {
     /// The file to process as a DICOM dataset.
     pub file: PathBuf,
 }
