@@ -291,7 +291,7 @@ impl<'app> BrowseApp {
             let render_model = table_model.clone();
             // The view_state is small and intended to be cloned every iteration.
             let render_view_state = view_state.clone();
-            let render_input_mode = input_mode.clone();
+            let render_input_mode = input_mode;
             let render_input_text = input_text.clone();
             terminal.draw(|frame| {
                 Self::render(
