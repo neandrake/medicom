@@ -27,7 +27,7 @@ use crate::{
             pixel_u16::PixelDataSliceU16, pixel_u32::PixelDataSliceU32, pixel_u8::PixelDataSliceU8,
             winlevel::WindowLevel, BitsAlloc, LoadError, PhotoInterp,
         },
-        IndexVec, VolAxis, VolDims, VolPixel, EPSILON_F32,
+        DicomVec, IndexVec, VolAxis, VolDims, VolPixel, EPSILON_F32,
     },
 };
 
@@ -166,7 +166,7 @@ impl ImageVolume {
 
     /// Returns the dimensions ordered by (width, height, depth) oriented to the given axis.
     #[must_use]
-    pub fn axis_dims(&self, axis: &VolAxis) -> IndexVec {
+    pub fn axis_dims(&self, axis: VolAxis) -> IndexVec {
         let (width, height, depth) = match axis {
             VolAxis::X => {
                 let width = self.dims.counts.y;
@@ -335,6 +335,9 @@ impl ImageVolume {
                 if let Some(first_info) = self.infos.first() {
                     self.dims.set_origin(first_info.vol_dims().origin());
                 }
+                if let Some(last_info) = self.infos.last() {
+                    self.dims.set_opp_origin(last_info.vol_dims().opp_origin());
+                }
             }
             Ok(_existing) => {
                 return Err(LoadError::InconsistentSliceFormat(
@@ -378,6 +381,35 @@ impl ImageVolume {
             (BitsAlloc::ThirtyTwo, true) => PixelDataSliceU32::from_rgb_32bit(pdinfo)?.into_i16(),
             (BitsAlloc::ThirtyTwo, false) => PixelDataSliceI32::from_mono_32bit(pdinfo)?.into_i16(),
         }
+    }
+
+    pub fn interp_pixel(&self, coord: DicomVec) -> Result<VolPixel, LoadError> {
+        let origin = self.dims().origin();
+        let vox_dims = self.dims().voxel_dims();
+
+        let norm_x = (coord.x - origin.x).abs();
+        let floor_x = (norm_x / vox_dims.x).round_ties_even() as usize;
+        let rem_x = norm_x % vox_dims.x;
+        let round_add_x = (rem_x / vox_dims.x).round_ties_even() as usize;
+        let index_x = floor_x + round_add_x;
+
+        let norm_y = (coord.y - origin.y).abs();
+        let floor_y = (norm_y / vox_dims.y).round_ties_even() as usize;
+        let rem_y = norm_y % vox_dims.y;
+        let round_add_y = (rem_y / vox_dims.y).round_ties_even() as usize;
+        let index_y = floor_y + round_add_y;
+
+        let norm_z = (coord.z - origin.z).abs();
+        let floor_z = (norm_z / vox_dims.z).round_ties_even() as usize;
+        let rem_z = norm_z % vox_dims.z;
+        let round_add_z = (rem_z / vox_dims.z).round_ties_even() as usize;
+        let index_z = floor_z + round_add_z;
+
+        self.get_pixel(IndexVec {
+            x: index_x,
+            y: index_y,
+            z: index_z,
+        })
     }
 
     /// Gets the pixel at the given coordinate (x, y, z).
@@ -428,13 +460,86 @@ impl ImageVolume {
     }
 
     #[must_use]
-    pub fn slice_iter(&'_ self, axis: &VolAxis, axis_index: usize) -> ImageVolumeAxisSliceIter<'_> {
+    pub fn slice_iter(&'_ self, axis: VolAxis, axis_index: usize) -> ImageVolumeAxisSliceIter<'_> {
         ImageVolumeAxisSliceIter {
             vol: self,
-            axis: axis.clone(),
+            axis,
             axis_index,
             pixel_count: 0,
         }
+    }
+
+    #[must_use]
+    pub fn pos_iter(&self, axis: VolAxis, start: DicomVec) -> ImageVolumeAxisPosIter {
+        ImageVolumeAxisPosIter {
+            vol: self,
+            axis,
+            coord: start,
+        }
+    }
+}
+
+pub struct ImageVolumeAxisPosIter<'buf> {
+    vol: &'buf ImageVolume,
+    axis: VolAxis,
+    coord: DicomVec,
+}
+
+impl ImageVolumeAxisPosIter<'_> {
+    fn compute_coord(&self, coord: DicomVec) -> Option<DicomVec> {
+        let origin = self.vol.dims().origin();
+        let opp_origin = self.vol.dims().opp_origin();
+        let vox_dims = self.vol.dims().voxel_dims();
+
+        match self.axis {
+            VolAxis::X => {
+                let mut z = coord.z + vox_dims.z;
+                if z > opp_origin.z || z < origin.z {
+                    z = origin.z;
+                }
+                let y = coord.y + vox_dims.y;
+                if y > opp_origin.y || y < origin.y {
+                    return None;
+                }
+
+                Some(DicomVec { x: coord.z, y, z })
+            }
+            VolAxis::Y => {
+                let mut z = coord.z + vox_dims.z;
+                if z > opp_origin.z || z < origin.z {
+                    z = origin.z;
+                }
+                let x = coord.x + vox_dims.x;
+                if x > opp_origin.x || x < origin.x {
+                    return None;
+                }
+
+                Some(DicomVec { x, y: coord.y, z })
+            }
+            VolAxis::Z => {
+                let mut x = coord.x + vox_dims.x;
+                if x > opp_origin.x || x < origin.x {
+                    x = origin.x;
+                }
+                let y = coord.y + vox_dims.y;
+                if y > opp_origin.y || y < origin.y {
+                    return None;
+                }
+
+                Some(DicomVec { x, y, z: coord.z })
+            }
+        }
+    }
+}
+
+impl Iterator for ImageVolumeAxisPosIter<'_> {
+    type Item = VolPixel;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let coord = self.compute_coord(self.coord)?;
+        let res = self.vol.interp_pixel(self.coord).ok();
+        self.coord = coord;
+        res
     }
 }
 

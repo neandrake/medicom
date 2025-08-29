@@ -23,8 +23,8 @@ use egui::{
     ColorImage, Margin, SizeHint,
 };
 use medicom::load::{
-    imgvol::ImageVolume, pixeldata::LoadError, workspace::Workspace, IndexVec, LoadableChunkKey,
-    LoadableKey, Loader, SeriesSource, SeriesSourceLoadResult, VolAxis,
+    imgvol::ImageVolume, pixeldata::LoadError, workspace::Workspace, DicomVec, IndexVec,
+    LoadableChunkKey, LoadableKey, Loader, SeriesSource, SeriesSourceLoadResult, VolAxis,
 };
 use std::{
     fs::File,
@@ -51,18 +51,19 @@ impl CommandApplication for ViewApp {
     }
 }
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone)]
+#[derive(PartialEq, Eq, Debug, Clone)]
 struct SliceKey {
     series: LoadableKey,
     axis: VolAxis,
-    slice_index: usize,
+    top_left: DicomVec,
+    //slice_index: usize,
 }
 
 impl From<&str> for SliceKey {
     fn from(value: &str) -> Self {
         let mut series_uid = value;
         let mut axis = VolAxis::Z;
-        let mut slice_index = 0usize;
+        let top_left;
 
         if let Some((_a, b)) = series_uid.split_once("X:") {
             axis = VolAxis::X;
@@ -78,40 +79,44 @@ impl From<&str> for SliceKey {
         // The series_uid component could be a file path and include forward-slashes.
         if let Some((a, b)) = series_uid.rsplit_once('/') {
             series_uid = a;
-            slice_index = b.parse::<usize>().unwrap_or_default();
+            let coord_vals = &b[1..b.len() - 2];
+            top_left = DicomVec::from_str(coord_vals).unwrap_or_default();
+            //slice_index = b.parse::<usize>().unwrap_or_default();
+        } else {
+            top_left = DicomVec::default();
         }
 
         Self {
             series: LoadableKey::from(series_uid),
             axis,
-            slice_index,
+            top_left,
         }
     }
 }
 
-impl From<(&str, VolAxis, usize)> for SliceKey {
-    fn from(value: (&str, VolAxis, usize)) -> Self {
+impl From<(&str, VolAxis, DicomVec)> for SliceKey {
+    fn from(value: (&str, VolAxis, DicomVec)) -> Self {
         Self {
             series: LoadableKey::from(value.0),
             axis: value.1,
-            slice_index: value.2,
+            top_left: value.2,
         }
     }
 }
 
-impl From<(&LoadableKey, VolAxis, usize)> for SliceKey {
-    fn from(value: (&LoadableKey, VolAxis, usize)) -> Self {
+impl From<(&LoadableKey, VolAxis, DicomVec)> for SliceKey {
+    fn from(value: (&LoadableKey, VolAxis, DicomVec)) -> Self {
         Self {
             series: value.0.clone(),
             axis: value.1,
-            slice_index: value.2,
+            top_left: value.2,
         }
     }
 }
 
 impl std::fmt::Display for SliceKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}/{}", self.axis, self.series, self.slice_index)
+        write!(f, "{}:{}/{}", self.axis, self.series, self.top_left)
     }
 }
 
@@ -184,7 +189,7 @@ struct DicomFileImageLoader {
 }
 
 impl DicomFileImageLoader {
-    fn to_image(imgvol: &ImageVolume, axis: &VolAxis, slice_index: usize) -> ColorImage {
+    fn to_image(imgvol: &ImageVolume, axis: VolAxis, start: DicomVec) -> ColorImage {
         let win = imgvol
             .minmax_winlevel()
             .with_out(f32::from(u8::MIN), f32::from(u8::MAX));
@@ -204,11 +209,7 @@ impl DicomFileImageLoader {
 
         #[allow(clippy::cast_possible_truncation)]
         let iter = std::iter::repeat_n(0, prefill)
-            .chain(
-                imgvol
-                    .slice_iter(axis, slice_index)
-                    .map(|p| win.apply(p.r) as u8),
-            )
+            .chain(imgvol.pos_iter(axis, start).map(|p| win.apply(p.r) as u8))
             .chain(std::iter::repeat_n(0, postfill));
 
         ColorImage::from_gray_iter([max, max], iter)
@@ -224,9 +225,8 @@ impl ImageLoader for DicomFileImageLoader {
         let slice_key = SliceKey::from(uri);
         if let Ok(workspace) = self.workspace.read() {
             if let Some(imgvol) = workspace.volume(&slice_key.series) {
-                let axis_dims = imgvol.axis_dims(&slice_key.axis);
-                if slice_key.slice_index < axis_dims.z {
-                    let image = Self::to_image(imgvol, &slice_key.axis, slice_key.slice_index);
+                if imgvol.dims().contains(slice_key.top_left) {
+                    let image = Self::to_image(imgvol, slice_key.axis, slice_key.top_left);
                     let image = Arc::new(image);
                     return Ok(ImagePoll::Ready { image });
                 }
@@ -259,7 +259,7 @@ impl ImageLoader for DicomFileImageLoader {
 const NO_CURRENT_SLICE_SENTINEL: usize = usize::MAX;
 struct ImageViewer {
     source: Arc<FlatFolderSeriesSource>,
-    current_slice: usize,
+    current_top_left: DicomVec,
     image_loader: Arc<DicomFileImageLoader>,
     view_axis: VolAxis,
 }
@@ -292,7 +292,7 @@ impl ImageViewer {
         cc.egui_ctx.add_image_loader(loader);
         Ok(Self {
             source,
-            current_slice: NO_CURRENT_SLICE_SENTINEL,
+            current_top_left: NO_CURRENT_SLICE_SENTINEL,
             image_loader: loader_for_self,
             view_axis: VolAxis::Z,
         })
@@ -389,27 +389,26 @@ impl eframe::App for ImageViewer {
             }
 
             let vox_dims = imgvol.dims().voxel_dims();
-            let axis = self.view_axis.clone();
-            let axis_dims = imgvol.axis_dims(&axis);
+            let axis_dims = imgvol.axis_dims(self.view_axis);
             let num_slices = axis_dims.z;
-            if self.current_slice == NO_CURRENT_SLICE_SENTINEL {
-                self.current_slice = num_slices / 2;
+            if self.current_top_left == NO_CURRENT_SLICE_SENTINEL {
+                self.current_top_left = num_slices / 2;
             }
 
             // Modify the image index for iterating.
             if ui.input(|i| i.key_down(egui::Key::ArrowUp) || i.key_down(egui::Key::K)) {
-                self.current_slice = self.current_slice.saturating_sub(1);
+                self.current_top_left = self.current_top_left.saturating_sub(1);
             } else if ui.input(|i| i.key_down(egui::Key::ArrowDown) || i.key_down(egui::Key::J)) {
-                if self.current_slice < num_slices - 1 {
-                    self.current_slice += 1;
+                if self.current_top_left < num_slices - 1 {
+                    self.current_top_left += 1;
                 }
             } else if ui.input(|i| i.key_pressed(egui::Key::V)) {
-                match axis {
+                match self.view_axis {
                     VolAxis::X => self.view_axis = VolAxis::Y,
                     VolAxis::Y => self.view_axis = VolAxis::Z,
                     VolAxis::Z => self.view_axis = VolAxis::X,
                 }
-                self.current_slice = NO_CURRENT_SLICE_SENTINEL;
+                self.current_top_left = NO_CURRENT_SLICE_SENTINEL;
                 // Don't finish rendering, let the next render pick up on this axis change.
                 return;
             } else if ui.input(|i| i.key_pressed(egui::Key::Q)) {
@@ -417,10 +416,10 @@ impl eframe::App for ImageViewer {
             }
 
             let mut index_coord = IndexVec::default();
-            match axis {
-                VolAxis::X => index_coord.x = self.current_slice,
-                VolAxis::Y => index_coord.y = self.current_slice,
-                VolAxis::Z => index_coord.z = self.current_slice,
+            match self.view_axis {
+                VolAxis::X => index_coord.x = self.current_top_left,
+                VolAxis::Y => index_coord.y = self.current_top_left,
+                VolAxis::Z => index_coord.z = self.current_top_left,
             }
             let dcm_pos = imgvol.dims().coordinate(index_coord);
             ui.label(format!(
@@ -434,7 +433,7 @@ impl eframe::App for ImageViewer {
             ui.label(format!("Slice Dims: {}x{}", axis_dims.x, axis_dims.y));
             ui.label(imgvol.series_desc());
 
-            ui.label(format!("Slice No: {}/{num_slices}", self.current_slice + 1));
+            ui.label(format!("Slice No: {}/{num_slices}", self.current_top_left + 1));
             ui.label(format!("Series UID: {}", imgvol.series_uid()));
 
             // Need to manually drop the cache lock before slice/image loading (via adding an image
@@ -444,7 +443,8 @@ impl eframe::App for ImageViewer {
             egui::Frame::new()
                 //.stroke((1_f32, Color32::MAGENTA))
                 .show(ui, |ui| {
-                    let slice_key = SliceKey::from((&series_key, axis, self.current_slice));
+                    let slice_key =
+                        SliceKey::from((&series_key, self.view_axis, self.current_top_left));
                     ui.add(egui::Image::from_uri(slice_key.to_string()));
                 });
         });
