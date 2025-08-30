@@ -1,21 +1,22 @@
 # medicom #
 
 ## About ##
-The `medicom` library provides baseline functionality for managing DICOM,
-including reading and writing DICOM files, decoding the PixelData element, and
-the DIMSE network protocol (C-ECHO, C-FIND, C-STORE, C-MOVE, C-GET).
+The `medicom` library is a clean-room implementation of the more common parts of
+the DICOM file and network protocol. This includes reading and writing DICOM
+files, decoding the PixelData element, and the DIMSE network protocol (C-ECHO,
+C-FIND, C-STORE, C-MOVE, C-GET).
 
 See the `medicom_tools` sub-crate for command-line utilities built to test out
 the library.
 
-```
-$ medicom_tools view "..."
+```lang=console
+$ ./medicom_tools view "<FILE|DIR>"
 ```
 
 ![Viewer Screenshot](static_assets/viewer.png "Viewer Screenshot")
 
-```
-$ medicom_tools inspect "..."
+```lang=console
+$ ./medicom_tools inspect "<FILE>"
 ```
 ![Inspect Screenshot](static_assets/inspector.png "Inspect Screenshot")
 
@@ -25,26 +26,26 @@ $ medicom_tools inspect "..."
 ```rust
 // 1. Set up a parser for a DICOM file.
 let parser: Parser<'_, File> = ParserBuilder::default()
-    // Stops parsing once the PixelData element is seen to avoid loading it into
-    // memory.
+    // Stop parsing once the PixelData element is encountered, before
+    // encountering its value field. Avoids copying the big payload into memory.
     .stop(TagStop::BeforeTagValue(&PixelData))
-    // The dictionary is used during parsing for Implicit VR transfer syntaxes,
-    // and associates the resolved VR to the resulting elements for parsing the
-    // element values.
+    // The dictionary is used during parsing for Implicit VR transfer syntaxes
+    // and decoding Implicit VR element values.
     .build(file, &STANDARD_DICOM_DICTIONARY);
 
-// 2. Use the parser as an iterator over the elements.
+// 2. The parser is an iterator of elements. No parsing occurs until iteration.
 for element_res in parser {
+    // Iteration returns Result<DicomElement, ParseError>.
     let element = element_res?;
-    // 3. Get a displayable name for the element, by looking it up in the
+    // 3. Get a displayable name for the element by looking it up in the
     //    dictionary or formatting the number as (GGGG,EEEE).
     let tag_name = STANDARD_DICOM_DICTIONARY.get_tag_by_number(elem.tag())
         .map(|tag| tag.ident().to_string())
         .unwrap_or_else(|| Tag::format_tag_to_display(elem.tag()));
 
-    // 4. Parse/interpret the value of an element. The `parse_value()` funtion
+    // 4. Parse/interpret the value of an element. The `parse_value()` function
     //    will parse as the explicit/implicit VR from the DICOM stream. Use
-    //    `parse_value_as()` to parse the value as a different VR.
+    //    `parse_value_as()` to parse the value with a different VR.
     //
     //    The `string()` function will attempt to interpret the parsed value as
     //    a single string, the first occurring string, returning `None` if
@@ -61,15 +62,14 @@ for element_res in parser {
 
 ### Decode PixelData for a DICOM SOP Instance, load into an `image::ImageBuffer`
 ```rust
-// 1. Parse the DICOM file.
+// 1. Parse the DICOM file and load it fully into memory as `DicomRoot`.
 let parser: Parser<'_, File> = ParserBuidler::default()
     .build(file, &STANDARD_DICOM_DICTIONARY);
-
 let Some(dcmroot) = DicomRoot::parse(&mut parser)? else {
-    return Err(anyhow!("DICOM SOP is missing PixelData"));
+    return Err(anyhow!("Failed parsing DICOM"));
 };
 
-// 2. Create an `ImageVolume` and load the DICOM file.
+// 2. Create an `ImageVolume` and load the `DicomRoot` as a slice.
 let mut imgvol = ImageVolume::default();
 imgvol.load_slice(dcmroot)?;
 
@@ -100,20 +100,20 @@ Refer to `medicom/readme.md` folder for further examples, and also the
 `medicom_tools` sample applications.
 
 ## Design Goals ##
-The APIs are not designed to encode the DICOM Information Object Definitions
+The library is not designed to encode the DICOM Information Object Definitions
 within the type system. It will allow both reading and writing structures which
-are valid DICOM binary protocol but it is up to the user of the API to ensure
-that IODs are structured appropriately, i.e. that all necessary DICOM elements
-are present and valid for a CT, MR, etc.
+are valid DICOM binary format but it is up to the user of the library to ensure
+that IODs are well-formed, i.e. that all necessary DICOM elements are present
+and valid for a CT, MR, etc.
 
-While this design puts the burden on the API user to interpret and create well-
-formed DICOM structures, it grants greater flexibility, especially for working
-with existing malformed DICOM datasets.
+While this design puts the burden on the library user to interpret and create
+well-formed DICOM structures, it grants greater flexibility, especially for
+working with existing malformed DICOM datasets.
 
 The DICOM standard dictionary of tags, UIDs, transfer syntaxes, etc. are
 available as an optional feature of the crate. Reading and writing DICOM does
 not require the DICOM standard dictionary and can be excluded to minimize the
-resulting binary size if desired.
+resulting binary size if needed.
 
 The core crate has minimal dependencies, two required and two optional.
 
@@ -124,18 +124,17 @@ The core crate has minimal dependencies, two required and two optional.
   lookup map using perfect hash maps.
 - `libflate` (optional) for reading and writing deflated datasets.
 
-The API is also focused on enabling efficient operations:
+The library is also focused on efficiency:
 
-- DICOM datasets are parsed in a stream-like manner allowing the API user to
+- DICOM datasets are parsed in a stream-like manner allowing the library user to
   decide what is necessary to retain in-memory.
-- DICOM element values themselves are not parsed during parsing of the dataset.
+- DICOM element values are not decoded during parsing of the dataset.
 - Flexible options for limiting how much of a DICOM dataset to parse, e.g.
-  stopping before the PixelData element if only metadata about the DICOM SOP is
-  needed.
+  stopping before the PixelData element.
 - DIMSE handling of DICOM dataset communication does not require the entire
   dataset to be loaded into memory at once.
-- At the moment, decoding PixelData does require the entire element value to be
-  loaded into meomry.
+- NOTE: At the moment, decoding PixelData does require the entire element value
+        to be loaded into memory.
 
 ## Crates ##
 
