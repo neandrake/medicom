@@ -212,7 +212,7 @@ pub enum SvcUserCommand {
         /// number. A tag signifier can also be a tag name/identifier such as `PatientID` or
         /// `PatientsName`.
         #[arg(short, long, value_parser = parse_key_val)]
-        query: Vec<(String, String)>,
+        query: Option<Vec<(String, String)>>,
     },
 
     /// Issue a C-STORE command.

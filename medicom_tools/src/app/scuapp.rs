@@ -284,7 +284,11 @@ impl SvcUserApp {
             }
             SvcUserCommand::Find { query_level, query } => {
                 let msg_id = assoc.next_msg_id();
-                let query_vals_resolved = Self::resolve_cli_query(query)?;
+                let query_vals_resolved = if let Some(query) = query {
+                    Self::resolve_cli_query(query)?
+                } else {
+                    Vec::with_capacity(0)
+                };
                 assoc.common_mut().send_cfind_req(
                     &mut writer,
                     msg_id,

@@ -23,10 +23,11 @@ use egui::{
     ColorImage, Margin, SizeHint,
 };
 use medicom::load::{
-    imgvol::ImageVolume, pixeldata::LoadError, workspace::Workspace, DicomVec, IndexVec,
-    LoadableChunkKey, LoadableKey, Loader, SeriesSource, SeriesSourceLoadResult, VolAxis,
+    imgvol::ImageVolume, pixeldata::LoadError, workspace::Workspace, DicomVec, LoadableChunkKey,
+    LoadableKey, Loader, SeriesSource, SeriesSourceLoadResult, VolAxis,
 };
 use std::{
+    f32,
     fs::File,
     path::{Path, PathBuf},
     sync::{Arc, RwLock},
@@ -256,7 +257,12 @@ impl ImageLoader for DicomFileImageLoader {
     }
 }
 
-const NO_CURRENT_SLICE_SENTINEL: usize = usize::MAX;
+const NO_CURRENT_SLICE_SENTINEL: DicomVec = DicomVec {
+    x: f32::MAX,
+    y: f32::MAX,
+    z: f32::MAX,
+};
+
 struct ImageViewer {
     source: Arc<FlatFolderSeriesSource>,
     current_top_left: DicomVec,
@@ -388,19 +394,56 @@ impl eframe::App for ImageViewer {
                 return;
             }
 
-            let vox_dims = imgvol.dims().voxel_dims();
+            let vol_dims = imgvol.dims();
+            let vox_dims = vol_dims.voxel_dims();
             let axis_dims = imgvol.axis_dims(self.view_axis);
-            let num_slices = axis_dims.z;
+
             if self.current_top_left == NO_CURRENT_SLICE_SENTINEL {
-                self.current_top_left = num_slices / 2;
+                let mut midpoint = vol_dims.origin();
+                match self.view_axis {
+                    VolAxis::X => {
+                        midpoint.x += (vol_dims.opp_origin().x - midpoint.x) / 2_f32;
+                    }
+                    VolAxis::Y => {
+                        midpoint.y += (vol_dims.opp_origin().y - midpoint.y) / 2_f32;
+                    }
+                    VolAxis::Z => {
+                        midpoint.z += (vol_dims.opp_origin().z - midpoint.z) / 2_f32;
+                    }
+                }
+                self.current_top_left = midpoint;
             }
 
             // Modify the image index for iterating.
             if ui.input(|i| i.key_down(egui::Key::ArrowUp) || i.key_down(egui::Key::K)) {
-                self.current_top_left = self.current_top_left.saturating_sub(1);
+                match self.view_axis {
+                    VolAxis::X => {
+                        let new_x = self.current_top_left.x - vox_dims.x;
+                        self.current_top_left.x = new_x.min(vol_dims.origin().x);
+                    }
+                    VolAxis::Y => {
+                        let new_y = self.current_top_left.y - vox_dims.y;
+                        self.current_top_left.y = new_y.min(vol_dims.origin().y);
+                    }
+                    VolAxis::Z => {
+                        let new_z = self.current_top_left.z - vox_dims.z;
+                        self.current_top_left.z = new_z.min(vol_dims.origin().z);
+                    }
+                }
             } else if ui.input(|i| i.key_down(egui::Key::ArrowDown) || i.key_down(egui::Key::J)) {
-                if self.current_top_left < num_slices - 1 {
-                    self.current_top_left += 1;
+                match self.view_axis {
+                    VolAxis::X => {
+                        let new_x = self.current_top_left.x + vox_dims.x;
+                        self.current_top_left.x = new_x.max(vol_dims.opp_origin().x);
+                    }
+                    VolAxis::Y => {
+                        let new_y = self.current_top_left.y + vox_dims.y;
+                        self.current_top_left.y = new_y.max(vol_dims.opp_origin().y);
+                    }
+                    VolAxis::Z => {
+                        let new_z = self.current_top_left.z + vox_dims.z;
+                        self.current_top_left.z = new_z.max(vol_dims.opp_origin().z);
+                    }
                 }
             } else if ui.input(|i| i.key_pressed(egui::Key::V)) {
                 match self.view_axis {
@@ -415,16 +458,9 @@ impl eframe::App for ImageViewer {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
 
-            let mut index_coord = IndexVec::default();
-            match self.view_axis {
-                VolAxis::X => index_coord.x = self.current_top_left,
-                VolAxis::Y => index_coord.y = self.current_top_left,
-                VolAxis::Z => index_coord.z = self.current_top_left,
-            }
-            let dcm_pos = imgvol.dims().coordinate(index_coord);
             ui.label(format!(
                 "Top-left Loc: {:.2}, {:.2}, {:.2}",
-                dcm_pos.x, dcm_pos.y, dcm_pos.z
+                self.current_top_left.x, self.current_top_left.y, self.current_top_left.z
             ));
             ui.label(format!(
                 "Voxel Dims: {:.2}mm x {:.2}mm x {:.2}mm",
@@ -433,7 +469,12 @@ impl eframe::App for ImageViewer {
             ui.label(format!("Slice Dims: {}x{}", axis_dims.x, axis_dims.y));
             ui.label(imgvol.series_desc());
 
-            ui.label(format!("Slice No: {}/{num_slices}", self.current_top_left + 1));
+            /*
+            ui.label(format!(
+                "Slice No: {}/{num_slices}",
+                self.current_top_left + 1
+            ));
+            */
             ui.label(format!("Series UID: {}", imgvol.series_uid()));
 
             // Need to manually drop the cache lock before slice/image loading (via adding an image

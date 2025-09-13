@@ -470,7 +470,7 @@ impl ImageVolume {
     }
 
     #[must_use]
-    pub fn pos_iter(&self, axis: VolAxis, start: DicomVec) -> ImageVolumeAxisPosIter {
+    pub fn pos_iter(&'_ self, axis: VolAxis, start: DicomVec) -> ImageVolumeAxisPosIter<'_> {
         ImageVolumeAxisPosIter {
             vol: self,
             axis,
