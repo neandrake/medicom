@@ -1,10 +1,10 @@
 # medicom #
 
 ## About ##
-The `medicom` library is a clean-room implementation of the more common parts of
-the DICOM file and network protocol. This includes reading and writing DICOM
-files, decoding the PixelData element, and the DIMSE network protocol (C-ECHO,
-C-FIND, C-STORE, C-MOVE, C-GET).
+The `medicom` library is an implementation of the more common parts of the DICOM
+file and network protocol. This includes reading and writing DICOM files,
+decoding the PixelData element, and the DIMSE network protocol (C-ECHO, C-FIND,
+C-STORE, C-MOVE, C-GET).
 
 See the `medicom_tools` sub-crate for command-line utilities built to test out
 the library.
